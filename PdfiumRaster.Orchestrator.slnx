@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+    <File Path="Directory.Packages.props" />
+    <File Path="Makefile" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/PdfiumRaster.Orchestrator/PdfiumRaster.Orchestrator.csproj" />
+    <Project Path="src/PdfiumRaster.Orchestrator.Worker/PdfiumRaster.Orchestrator.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PdfiumRaster.Orchestrator.Tests/PdfiumRaster.Orchestrator.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PdfiumRaster.Orchestrator</AssemblyName>
+    <RootNamespace>PdfiumRaster.Orchestration</RootNamespace>
+    <PackageId>PdfiumRaster.Orchestrator</PackageId>
+    <VersionPrefix>2.0.1</VersionPrefix>
+    <Authors>PdfiumRaster contributors</Authors>
+    <Title>PdfiumRaster Orchestrator</Title>
+    <Description>Multi-process PDFium rendering for PdfiumRaster over local named pipes.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageTags>pdf;pdfium;raster;image;process;orchestration</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/gabisonia/PdfiumRaster.Orchestrator</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/gabisonia/PdfiumRaster.Orchestrator</PackageProjectUrl>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PdfiumRasterOrchestratorWorkerArtifacts Condition="'$(PdfiumRasterOrchestratorWorkerArtifacts)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\workers</PdfiumRasterOrchestratorWorkerArtifacts>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfiumRaster" />
+    <PackageReference Include="System.Threading.Channels" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PdfiumRaster.Orchestrator.Tests" />
+    <InternalsVisibleTo Include="PdfiumRaster.Orchestrator.Worker" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Link="README.md" />
+    <None Include="buildTransitive\PdfiumRaster.Orchestrator.targets"
+          Pack="true"
+          PackagePath="buildTransitive\PdfiumRaster.Orchestrator.targets" />
+    <None Include="$(PdfiumRasterOrchestratorWorkerArtifacts)\**\PdfiumRaster.Orchestrator.Worker"
+          Pack="true"
+          PackagePath="tools\%(RecursiveDir)%(Filename)%(Extension)"
+          Condition="Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)')" />
+    <None Include="$(PdfiumRasterOrchestratorWorkerArtifacts)\**\PdfiumRaster.Orchestrator.Worker.exe"
+          Pack="true"
+          PackagePath="tools\%(RecursiveDir)%(Filename)%(Extension)"
+          Condition="Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)')" />
+  </ItemGroup>
+
+  <Target Name="ValidateWorkerArtifacts" BeforeTargets="Pack">
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\win-x86\PdfiumRaster.Orchestrator.Worker.exe')"
+           Text="Orchestrator worker artifacts are missing. Run 'make publish-workers' before packing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\win-x64\PdfiumRaster.Orchestrator.Worker.exe')"
+           Text="The win-x64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\win-arm64\PdfiumRaster.Orchestrator.Worker.exe')"
+           Text="The win-arm64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\linux-arm\PdfiumRaster.Orchestrator.Worker')"
+           Text="The linux-arm orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\linux-x64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The linux-x64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\linux-arm64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The linux-arm64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\linux-musl-x64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The linux-musl-x64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\linux-musl-arm64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The linux-musl-arm64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\osx-x64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The osx-x64 orchestrator worker artifact is missing." />
+    <Error Condition="!Exists('$(PdfiumRasterOrchestratorWorkerArtifacts)\osx-arm64\PdfiumRaster.Orchestrator.Worker')"
+           Text="The osx-arm64 orchestrator worker artifact is missing." />
+  </Target>
+
+</Project>

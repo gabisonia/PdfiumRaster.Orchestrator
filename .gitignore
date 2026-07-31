@@ -1,0 +1,10 @@
+.DS_Store
+.idea/
+.vs/
+.vscode/
+artifacts/
+bin/
+obj/
+TestResults/
+tests/PdfiumRaster.Orchestrator.Tests/ManualOutput/
+tests/PdfiumRaster.Orchestrator.Tests/TestAssets/manual.pdf

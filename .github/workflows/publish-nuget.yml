@@ -1,0 +1,137 @@
+name: Publish NuGet
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - beta
+          - stable
+      version:
+        description: "Package version. Stable example: 2.0.1. Beta input can be 2.1.0 or 2.1.0-beta.1."
+        required: true
+        type: string
+      nuget_user:
+        description: "NuGet.org profile name that owns the trusted publishing policy."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Compute package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input_version="${{ inputs.version }}"
+          channel="${{ inputs.channel }}"
+
+          if [[ "$channel" == "stable" ]]; then
+            if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Stable releases require a SemVer version such as 2.0.1." >&2
+              exit 1
+            fi
+            package_version="$input_version"
+          else
+            if [[ "$input_version" =~ - ]]; then
+              package_version="$input_version"
+            else
+              package_version="${input_version}-beta.${GITHUB_RUN_NUMBER}"
+            fi
+
+            if [[ ! "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
+              echo "Beta releases must resolve to a SemVer prerelease such as 2.1.0-beta.1." >&2
+              exit 1
+            fi
+          fi
+
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+
+      - name: Test
+        run: dotnet test PdfiumRaster.Orchestrator.slnx --configuration Release --no-restore --filter "Category!=Local"
+
+      - name: Pack
+        run: make pack PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+
+      - name: Smoke test netstandard2.1 package consumption
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tmpdir="$(mktemp -d)"
+          dotnet new classlib -n PdfiumRasterOrchestratorCompatibility -o "$tmpdir/compatibility" --framework netstandard2.1
+          cd "$tmpdir/compatibility"
+          dotnet new nugetconfig --force
+          dotnet nuget add source "$GITHUB_WORKSPACE/artifacts" --name local --configfile nuget.config
+          dotnet add package PdfiumRaster.Orchestrator --version "${{ steps.version.outputs.package_version }}"
+          dotnet build --configuration Release
+
+      - name: Smoke test packaged worker
+        run: make smoke-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PdfiumRaster.Orchestrator-${{ steps.version.outputs.package_version }}
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ inputs.nuget_user }}
+
+      - name: Publish package
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packages=(artifacts/*.nupkg)
+          symbols=(artifacts/*.snupkg)
+
+          if (( ${#packages[@]} == 0 )); then
+            echo "No .nupkg files found in artifacts/." >&2
+            exit 1
+          fi
+
+          for package in "${packages[@]}"; do
+            dotnet nuget push "$package" \
+              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+          for symbol_package in "${symbols[@]}"; do
+            dotnet nuget push "$symbol_package" \
+              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done

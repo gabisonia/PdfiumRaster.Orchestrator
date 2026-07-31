@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <_PdfiumRasterOrchestratorWorkerRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_PdfiumRasterOrchestratorWorkerRid>
+    <_PdfiumRasterOrchestratorWorkerRid Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_PdfiumRasterOrchestratorWorkerRid>
+    <_PdfiumRasterOrchestratorWorkerFile Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' == 'win-x86' Or
+                                         '$(_PdfiumRasterOrchestratorWorkerRid)' == 'win-x64' Or
+                                         '$(_PdfiumRasterOrchestratorWorkerRid)' == 'win-arm64'">PdfiumRaster.Orchestrator.Worker.exe</_PdfiumRasterOrchestratorWorkerFile>
+    <_PdfiumRasterOrchestratorWorkerFile Condition="'$(_PdfiumRasterOrchestratorWorkerFile)' == ''">PdfiumRaster.Orchestrator.Worker</_PdfiumRasterOrchestratorWorkerFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' != ''">
+    <_PdfiumRasterOrchestratorWorker Include="$(MSBuildThisFileDirectory)..\tools\$(_PdfiumRasterOrchestratorWorkerRid)\$(_PdfiumRasterOrchestratorWorkerFile)"
+                         Condition="Exists('$(MSBuildThisFileDirectory)..\tools\$(_PdfiumRasterOrchestratorWorkerRid)\$(_PdfiumRasterOrchestratorWorkerFile)')" />
+    <None Include="@(_PdfiumRasterOrchestratorWorker)"
+          Link="$(_PdfiumRasterOrchestratorWorkerFile)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+</Project>

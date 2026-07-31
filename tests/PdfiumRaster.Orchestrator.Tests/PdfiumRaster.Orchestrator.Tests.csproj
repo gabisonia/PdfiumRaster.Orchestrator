@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>PdfiumRaster.Orchestrator.Tests</AssemblyName>
+    <RootNamespace>PdfiumRaster.Orchestration.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator\PdfiumRaster.Orchestrator.csproj" />
+    <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator.Worker\PdfiumRaster.Orchestrator.Worker.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestAssets\*.pdf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>PdfiumRasterWorkerPath</_Parameter1>
+      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../src/PdfiumRaster.Orchestrator.Worker/bin/$(Configuration)/net10.0/PdfiumRaster.Orchestrator.Worker.dll'))</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

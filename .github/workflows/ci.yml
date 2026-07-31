@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - release-*
+  pull_request:
+
+jobs:
+  test-pack-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+
+      - name: Test
+        run: dotnet test PdfiumRaster.Orchestrator.slnx --configuration Release --no-restore --filter "Category!=Local"
+
+      - name: Pack
+        if: runner.os == 'Linux'
+        run: make pack
+
+      - name: Smoke test netstandard2.1 package consumption
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tmpdir="$(mktemp -d)"
+          dotnet new classlib -n PdfiumRasterOrchestratorCompatibility -o "$tmpdir/compatibility" --framework netstandard2.1
+          cd "$tmpdir/compatibility"
+          dotnet new nugetconfig --force
+          dotnet nuget add source "$GITHUB_WORKSPACE/artifacts" --name local --configfile nuget.config
+          dotnet add package PdfiumRaster.Orchestrator --version 2.0.1
+          dotnet build --configuration Release
+
+      - name: Smoke test packaged worker
+        if: runner.os == 'Linux'
+        run: make smoke-package
