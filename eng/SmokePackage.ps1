@@ -17,12 +17,18 @@ try {
 
     Push-Location $projectDirectory
     try {
+        dotnet new nugetconfig --force
+        if ($LASTEXITCODE -ne 0) { throw 'NuGet configuration creation failed.' }
+
+        dotnet nuget add source (Join-Path $repositoryRoot 'artifacts') `
+            --name local `
+            --configfile nuget.config
+        if ($LASTEXITCODE -ne 0) { throw 'Local package source configuration failed.' }
+
         dotnet add package PdfiumRaster.Orchestrator --version $PackageVersion --no-restore
         if ($LASTEXITCODE -ne 0) { throw 'Package installation failed.' }
 
-        dotnet restore `
-            --source (Join-Path $repositoryRoot 'artifacts') `
-            --source 'https://api.nuget.org/v3/index.json'
+        dotnet restore --configfile nuget.config
         if ($LASTEXITCODE -ne 0) { throw 'Package restore failed.' }
 
         Copy-Item (Join-Path $repositoryRoot 'tests/PdfiumRaster.Orchestrator.Tests/TestAssets/smoke.pdf') 'input.pdf'
