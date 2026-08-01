@@ -7,6 +7,11 @@ Companion repository: [PdfiumRaster](https://github.com/gabisonia/PdfiumRaster),
 `PdfiumRaster.Orchestrator` adds true parallel PDFium rendering to
 [`PdfiumRaster`](https://www.nuget.org/packages/PdfiumRaster) by running a fixed number of isolated local worker
 processes. Each worker has its own PDFium runtime and communicates with the application over a private named pipe.
+The orchestrator owns a bidirectional `NamedPipeServerStream`, and its child worker connects with a
+`NamedPipeClientStream`. There is one persistent pipe per worker process; the pipe carries startup handshakes,
+requests, in-memory inputs, and results. The roles, framing, data flow, failure handling, and trust boundary are
+described in the [architecture guide](docs/ARCHITECTURE.md#named-pipe-roles).
+
 The package depends on `PdfiumRaster` versions from 2.0.1 up to, but not including, 3.0.0. Installing the orchestrator
 therefore installs a compatible core rendering library automatically while allowing the two packages to release
 independently.
