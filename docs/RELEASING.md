@@ -14,12 +14,12 @@ change compile.
 Install the .NET 10 SDK, then run:
 
 ```bash
-make release-check PACKAGE_VERSION=0.4.0
+make release-check PACKAGE_VERSION=0.5.0
 ```
 
 This runs automated tests with the enforced line and branch coverage thresholds, publishes every supported
-self-contained worker, creates the NuGet and symbol packages, verifies package contents, installs the package in a
-clean app, and renders a page through a packaged worker.
+self-contained worker, creates the all-runtime and RID-specific NuGet and symbol packages, verifies package contents,
+installs both applicable package shapes in clean apps, and renders through their packaged workers.
 
 The enforced scenarios and platform-specific coverage strategy are listed in [the testing guide](TESTING.md).
 
@@ -27,12 +27,15 @@ The package must contain:
 
 - `lib/netstandard2.1/PdfiumRaster.Orchestrator.dll` and XML documentation;
 - the root `README.md`, `CHANGELOG.md`, and MIT license metadata;
-- `buildTransitive/PdfiumRaster.Orchestrator.targets`;
-- worker executables under all supported `tools/<rid>/` directories;
+- `buildTransitive/PdfiumRaster.Orchestrator.targets` in the all-runtime package and the package-ID-matching
+  `buildTransitive/PdfiumRaster.Orchestrator.<rid>.targets` in each slim package;
+- worker executables under all supported `tools/<rid>/` directories in the all-runtime package;
+- exactly one matching `tools/<rid>/` worker in each `PdfiumRaster.Orchestrator.<rid>` package;
 - a dependency on the intended PdfiumRaster version range.
 
-CI additionally downloads the package built on Linux and runs the packaged-worker smoke test on Linux, Windows, and
-macOS. This is distinct from the normal test suite, which runs a framework-dependent worker from the build output.
+CI additionally downloads packages built on Linux and runs all-runtime and matching slim-package worker smoke tests on
+Linux, Windows, and macOS. This is distinct from the normal test suite, which runs a framework-dependent worker from
+the build output.
 
 ## Release checklist
 
@@ -56,5 +59,5 @@ profile. Configure the repository's `nuget` environment and create a NuGet trust
 repository and workflow before the first release. The workflow uses OIDC, runs the same tests and package smoke checks,
 uploads the artifacts, and pushes `.nupkg` and `.snupkg` files to NuGet.org.
 
-Use a SemVer value such as `0.4.0` for stable releases. Beta input may include a suffix such as `0.5.0-beta.1`; if the
+Use a SemVer value such as `0.5.0` for stable releases. Beta input may include a suffix such as `0.6.0-beta.1`; if the
 suffix is omitted, the workflow appends a run-number beta suffix.

@@ -22,6 +22,11 @@ public sealed class PdfRenderOrchestrator : IDisposable
     private readonly PdfRenderQueueFullMode _queueFullMode;
     private readonly TimeSpan? _requestTimeout;
     private readonly TimeSpan[] _workerRestartDelays;
+    private readonly int _maximumBatchPages;
+    private readonly long? _maximumInputBytes;
+    private readonly long? _maximumBitmapBytes;
+    private readonly long? _maximumOutputBytes;
+    private readonly string? _temporaryDirectory;
     private readonly WorkerSlot[] _workers;
     private readonly Task _completion;
     private readonly List<Task> _detachedOperations = new();
@@ -44,6 +49,15 @@ public sealed class PdfRenderOrchestrator : IDisposable
         _queueFullMode = options.QueueFullMode;
         _requestTimeout = options.RequestTimeout;
         _workerRestartDelays = options.WorkerRestartDelays.ToArray();
+        _maximumBatchPages = options.MaximumBatchPages;
+        _maximumInputBytes = options.MaximumInputBytes;
+        _maximumBitmapBytes = options.MaximumBitmapBytes;
+        _maximumOutputBytes = options.MaximumOutputBytes;
+        _temporaryDirectory = options.TemporaryDirectory;
+        if (_temporaryDirectory is not null)
+        {
+            Directory.CreateDirectory(_temporaryDirectory);
+        }
         var workerStartupTimeout = options.WorkerStartupTimeout;
         _queue = Channel.CreateBounded<OrchestrationJob>(new BoundedChannelOptions(options.QueueCapacity)
         {
@@ -60,7 +74,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             var starts = new Task[options.WorkerCount];
             for (var index = 0; index < options.WorkerCount; index++)
             {
-                var worker = new WorkerSlot(index, workerStartupTimeout);
+                var worker = new WorkerSlot(index, workerStartupTimeout, _temporaryDirectory);
                 _workers[index] = worker;
                 starts[index] = worker.StartAsync();
             }
@@ -157,6 +171,120 @@ public sealed class PdfRenderOrchestrator : IDisposable
         CancellationToken cancellationToken = default)
     {
         return SubmitRender(CreateStreamSource(pdfStream, leaveOpen), pageIndex, options, password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues multiple zero-based pages from one PDF file and renders them after opening the document once.
+    /// </summary>
+    /// <param name="pdfPath">PDF path opened once by a local worker.</param>
+    /// <param name="pageIndexes">Non-empty page sequence. Results preserve this order, including duplicates.</param>
+    /// <param name="options">Optional rendering and color-conversion settings, snapshotted during submission.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Caller-owned BGRA bitmaps in the same order as <paramref name="pageIndexes" />.</returns>
+    public Task<IReadOnlyList<PdfBitmap>> RenderPagesAsync(
+        string pdfPath,
+        IReadOnlyList<int> pageIndexes,
+        PdfImageConversionOptions? options = null,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchRender(CreatePathSource(pdfPath), pageIndexes, options, password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues multiple zero-based pages from PDF bytes and renders them after transferring and opening the PDF once.
+    /// </summary>
+    /// <param name="pdfBytes">PDF bytes that must not be modified until completion.</param>
+    /// <param name="pageIndexes">Non-empty page sequence. Results preserve this order, including duplicates.</param>
+    /// <param name="options">Optional rendering and color-conversion settings, snapshotted during submission.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Caller-owned BGRA bitmaps in the same order as <paramref name="pageIndexes" />.</returns>
+    public Task<IReadOnlyList<PdfBitmap>> RenderPagesAsync(
+        byte[] pdfBytes,
+        IReadOnlyList<int> pageIndexes,
+        PdfImageConversionOptions? options = null,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchRender(CreateByteSource(pdfBytes), pageIndexes, options, password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues multiple zero-based pages from a PDF stream and renders them after transferring and opening the PDF once.
+    /// </summary>
+    /// <param name="pdfStream">Readable stream that must remain usable and unmodified until completion.</param>
+    /// <param name="pageIndexes">Non-empty page sequence. Results preserve this order, including duplicates.</param>
+    /// <param name="options">Optional rendering and color-conversion settings, snapshotted during submission.</param>
+    /// <param name="leaveOpen">Whether to leave the PDF stream open after the request finishes.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Caller-owned BGRA bitmaps in the same order as <paramref name="pageIndexes" />.</returns>
+    public Task<IReadOnlyList<PdfBitmap>> RenderPagesAsync(
+        Stream pdfStream,
+        IReadOnlyList<int> pageIndexes,
+        PdfImageConversionOptions? options = null,
+        bool leaveOpen = false,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchRender(CreateStreamSource(pdfStream, leaveOpen), pageIndexes, options, password,
+            cancellationToken);
+    }
+
+    /// <summary>Saves multiple pages from one PDF file after opening the document once.</summary>
+    /// <param name="pdfPath">PDF path opened once by a local worker.</param>
+    /// <param name="outputs">Non-empty page-to-file mappings processed in order.</param>
+    /// <param name="options">Optional rendering, format, and encoding settings.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>A task that completes after all image files have been committed.</returns>
+    public Task SavePagesAsync(
+        string pdfPath,
+        IReadOnlyList<PdfPageFileOutput> outputs,
+        PdfImageConversionOptions? options = null,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchSave(CreatePathSource(pdfPath), outputs, options, password, cancellationToken);
+    }
+
+    /// <summary>Saves multiple pages from PDF bytes after transferring and opening the document once.</summary>
+    /// <param name="pdfBytes">PDF bytes that must not be modified until completion.</param>
+    /// <param name="outputs">Non-empty page-to-file mappings processed in order.</param>
+    /// <param name="options">Optional rendering, format, and encoding settings.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>A task that completes after all image files have been committed.</returns>
+    public Task SavePagesAsync(
+        byte[] pdfBytes,
+        IReadOnlyList<PdfPageFileOutput> outputs,
+        PdfImageConversionOptions? options = null,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchSave(CreateByteSource(pdfBytes), outputs, options, password, cancellationToken);
+    }
+
+    /// <summary>Saves multiple pages from a PDF stream after transferring and opening the document once.</summary>
+    /// <param name="pdfStream">Readable stream that must remain usable and unmodified until completion.</param>
+    /// <param name="outputs">Non-empty page-to-file mappings processed in order.</param>
+    /// <param name="options">Optional rendering, format, and encoding settings.</param>
+    /// <param name="leaveOpen">Whether to leave the PDF stream open after the request finishes.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>A task that completes after all image files have been committed.</returns>
+    public Task SavePagesAsync(
+        Stream pdfStream,
+        IReadOnlyList<PdfPageFileOutput> outputs,
+        PdfImageConversionOptions? options = null,
+        bool leaveOpen = false,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitBatchSave(CreateStreamSource(pdfStream, leaveOpen), outputs, options, password,
+            cancellationToken);
     }
 
     /// <summary>
@@ -359,7 +487,10 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 pageIndex,
                 SnapshotOptions(options),
                 password,
-                cancellationToken);
+                cancellationToken,
+                _maximumInputBytes,
+                _maximumBitmapBytes,
+                _maximumOutputBytes);
             return SubmitBitmapAsync(job);
         }
         catch
@@ -387,7 +518,69 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 pageIndex,
                 SnapshotOptions(options),
                 password,
-                cancellationToken);
+                cancellationToken,
+                _maximumInputBytes,
+                _maximumOutputBytes);
+            return SubmitSaveAsync(job);
+        }
+        catch
+        {
+            source.Cleanup();
+            throw;
+        }
+    }
+
+    private Task<IReadOnlyList<PdfBitmap>> SubmitBatchRender(
+        InputSource source,
+        IReadOnlyList<int> pageIndexes,
+        PdfImageConversionOptions? options,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var pages = SnapshotPageIndexes(pageIndexes);
+            var job = OrchestrationJob.CreateBitmapBatch(
+                Interlocked.Increment(ref _nextRequestId),
+                source,
+                pages,
+                SnapshotOptions(options),
+                password,
+                cancellationToken,
+                _maximumInputBytes,
+                _maximumBitmapBytes,
+                _maximumOutputBytes);
+            return SubmitBitmapsAsync(job);
+        }
+        catch
+        {
+            source.Cleanup();
+            throw;
+        }
+    }
+
+    private Task SubmitBatchSave(
+        InputSource source,
+        IReadOnlyList<PdfPageFileOutput> outputs,
+        PdfImageConversionOptions? options,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = SnapshotFileOutputs(outputs);
+            var pages = snapshot.Select(output => output.PageIndex).ToArray();
+            var paths = snapshot.Select(output => output.ImagePath).ToArray();
+            var job = OrchestrationJob.CreateSaveBatch(
+                Interlocked.Increment(ref _nextRequestId),
+                source,
+                pages,
+                new BatchPathOutputTarget(paths),
+                SnapshotOptions(options),
+                password,
+                cancellationToken,
+                _maximumInputBytes,
+                _maximumOutputBytes);
             return SubmitSaveAsync(job);
         }
         catch
@@ -410,6 +603,21 @@ public sealed class PdfRenderOrchestrator : IDisposable
         }
 
         return await job.BitmapTask.ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<PdfBitmap>> SubmitBitmapsAsync(OrchestrationJob job)
+    {
+        try
+        {
+            await EnqueueAsync(job).ConfigureAwait(false);
+        }
+        catch
+        {
+            job.Cleanup();
+            throw;
+        }
+
+        return await job.BitmapsTask.ConfigureAwait(false);
     }
 
     private async Task SubmitSaveAsync(OrchestrationJob job)
@@ -546,7 +754,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 timeoutCancellation.Cancel();
             }
 
-            var bitmap = await execution.ConfigureAwait(false);
+            var bitmaps = await execution.ConfigureAwait(false);
             if (Volatile.Read(ref _cancelRequested) != 0 || job.CancellationToken.IsCancellationRequested)
             {
                 job.Cancel();
@@ -558,7 +766,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             }
             else
             {
-                job.Complete(bitmap);
+                job.Complete(bitmaps);
                 PdfRenderOrchestratorEventSource.Log.RequestCompleted(
                     job.RequestId,
                     worker.Index,
@@ -778,7 +986,71 @@ public sealed class PdfRenderOrchestrator : IDisposable
         }
     }
 
-    private static InputSource CreatePathSource(string pdfPath)
+    private int[] SnapshotPageIndexes(IReadOnlyList<int> pageIndexes)
+    {
+        if (pageIndexes is null)
+        {
+            throw new ArgumentNullException(nameof(pageIndexes));
+        }
+
+        if (pageIndexes.Count == 0 || pageIndexes.Count > _maximumBatchPages)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageIndexes), pageIndexes.Count,
+                $"A batch must contain from 1 through {_maximumBatchPages} pages.");
+        }
+
+        var snapshot = new int[pageIndexes.Count];
+        for (var index = 0; index < pageIndexes.Count; index++)
+        {
+            ValidatePageIndex(pageIndexes[index]);
+            snapshot[index] = pageIndexes[index];
+        }
+
+        return snapshot;
+    }
+
+    private PdfPageFileOutput[] SnapshotFileOutputs(IReadOnlyList<PdfPageFileOutput> outputs)
+    {
+        if (outputs is null)
+        {
+            throw new ArgumentNullException(nameof(outputs));
+        }
+
+        if (outputs.Count == 0 || outputs.Count > _maximumBatchPages)
+        {
+            throw new ArgumentOutOfRangeException(nameof(outputs), outputs.Count,
+                $"A batch must contain from 1 through {_maximumBatchPages} outputs.");
+        }
+
+        var snapshot = new PdfPageFileOutput[outputs.Count];
+        var comparer = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var paths = new HashSet<string>(comparer);
+        for (var index = 0; index < outputs.Count; index++)
+        {
+            var output = outputs[index] ??
+                throw new ArgumentException("Batch outputs cannot contain null items.", nameof(outputs));
+            if (!paths.Add(output.ImagePath))
+            {
+                throw new ArgumentException("Batch output paths must be unique.", nameof(outputs));
+            }
+
+            snapshot[index] = output;
+        }
+
+        return snapshot;
+    }
+
+    private static void ThrowIfResourceLimitExceeded(string resource, long? limit, long observed)
+    {
+        if (limit.HasValue && observed > limit.Value)
+        {
+            throw new PdfRenderResourceLimitException(resource, limit.Value, observed);
+        }
+    }
+
+    private InputSource CreatePathSource(string pdfPath)
     {
         if (string.IsNullOrWhiteSpace(pdfPath))
         {
@@ -788,7 +1060,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         return new PathInputSource(Path.GetFullPath(pdfPath));
     }
 
-    private static InputSource CreateByteSource(byte[] pdfBytes)
+    private InputSource CreateByteSource(byte[] pdfBytes)
     {
         if (pdfBytes is null)
         {
@@ -800,10 +1072,11 @@ public sealed class PdfRenderOrchestrator : IDisposable
             throw new ArgumentException("PDF bytes cannot be empty.", nameof(pdfBytes));
         }
 
-        return new ByteInputSource(pdfBytes);
+        ThrowIfResourceLimitExceeded("input bytes", _maximumInputBytes, pdfBytes.LongLength);
+        return new ByteInputSource(pdfBytes, _maximumInputBytes);
     }
 
-    private static InputSource CreateStreamSource(Stream pdfStream, bool leaveOpen)
+    private InputSource CreateStreamSource(Stream pdfStream, bool leaveOpen)
     {
         if (pdfStream is null)
         {
@@ -815,7 +1088,12 @@ public sealed class PdfRenderOrchestrator : IDisposable
             throw new ArgumentException("PDF stream must be readable.", nameof(pdfStream));
         }
 
-        return new StreamInputSource(pdfStream, leaveOpen);
+        if (pdfStream.CanSeek)
+        {
+            ThrowIfResourceLimitExceeded("input bytes", _maximumInputBytes, pdfStream.Length - pdfStream.Position);
+        }
+
+        return new StreamInputSource(pdfStream, leaveOpen, _maximumInputBytes);
     }
 
     private static OutputTarget CreatePathTarget(string imagePath)
@@ -912,16 +1190,19 @@ public sealed class PdfRenderOrchestrator : IDisposable
     private sealed class ByteInputSource : InputSource
     {
         private readonly byte[] _bytes;
+        private readonly long? _maximumBytes;
 
-        internal ByteInputSource(byte[] bytes)
+        internal ByteInputSource(byte[] bytes, long? maximumBytes)
         {
             _bytes = bytes;
+            _maximumBytes = maximumBytes;
         }
 
         internal override WorkerSourceKind Kind => WorkerSourceKind.Content;
 
         internal override async Task SendAsync(Stream pipe, CancellationToken cancellationToken)
         {
+            ThrowIfResourceLimitExceeded("input bytes", _maximumBytes, _bytes.LongLength);
             var offset = 0;
             while (offset < _bytes.Length)
             {
@@ -939,11 +1220,13 @@ public sealed class PdfRenderOrchestrator : IDisposable
     {
         private readonly Stream _stream;
         private readonly bool _leaveOpen;
+        private readonly long? _maximumBytes;
 
-        internal StreamInputSource(Stream stream, bool leaveOpen)
+        internal StreamInputSource(Stream stream, bool leaveOpen, long? maximumBytes)
         {
             _stream = stream;
             _leaveOpen = leaveOpen;
+            _maximumBytes = maximumBytes;
         }
 
         internal override WorkerSourceKind Kind => WorkerSourceKind.Content;
@@ -951,10 +1234,13 @@ public sealed class PdfRenderOrchestrator : IDisposable
         internal override async Task SendAsync(Stream pipe, CancellationToken cancellationToken)
         {
             var buffer = new byte[WorkerProtocol.ChunkSize];
+            long total = 0;
             int read;
             while ((read = await _stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)
                        .ConfigureAwait(false)) != 0)
             {
+                total = checked(total + read);
+                ThrowIfResourceLimitExceeded("input bytes", _maximumBytes, total);
                 var chunk = new byte[read];
                 Buffer.BlockCopy(buffer, 0, chunk, 0, read);
                 await WorkerProtocol.WriteFrameAsync(pipe, WorkerMessage.InputChunk, chunk, cancellationToken)
@@ -1009,9 +1295,21 @@ public sealed class PdfRenderOrchestrator : IDisposable
         internal override Stream Stream => _stream;
     }
 
+    private sealed class BatchPathOutputTarget : OutputTarget
+    {
+        internal BatchPathOutputTarget(string[] paths)
+        {
+            Paths = paths;
+        }
+
+        internal override WorkerOutputKind Kind => WorkerOutputKind.Path;
+        internal string[] Paths { get; }
+    }
+
     private sealed class OrchestrationJob
     {
         private readonly TaskCompletionSource<PdfBitmap>? _bitmapCompletion;
+        private readonly TaskCompletionSource<IReadOnlyList<PdfBitmap>>? _bitmapsCompletion;
         private readonly TaskCompletionSource<object?>? _saveCompletion;
         private int _cleaned;
 
@@ -1019,23 +1317,34 @@ public sealed class PdfRenderOrchestrator : IDisposable
             long requestId,
             InputSource source,
             OutputTarget target,
-            int pageIndex,
+            int[] pageIndexes,
             PdfImageConversionOptions options,
             string? password,
             CancellationToken cancellationToken,
-            bool bitmap)
+            int resultKind,
+            long? maximumInputBytes,
+            long? maximumBitmapBytes,
+            long? maximumOutputBytes)
         {
             RequestId = requestId;
             SubmittedTimestamp = Stopwatch.GetTimestamp();
             Source = source;
             Target = target;
-            PageIndex = pageIndex;
+            PageIndexes = pageIndexes;
             Options = options;
             Password = password;
             CancellationToken = cancellationToken;
-            if (bitmap)
+            MaximumInputBytes = maximumInputBytes;
+            MaximumBitmapBytes = maximumBitmapBytes;
+            MaximumOutputBytes = maximumOutputBytes;
+            if (resultKind == 1)
             {
                 _bitmapCompletion = new TaskCompletionSource<PdfBitmap>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            else if (resultKind == 2)
+            {
+                _bitmapsCompletion = new TaskCompletionSource<IReadOnlyList<PdfBitmap>>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
             }
             else
@@ -1048,14 +1357,19 @@ public sealed class PdfRenderOrchestrator : IDisposable
         internal InputSource Source { get; }
         internal long RequestId { get; }
         internal long SubmittedTimestamp { get; }
-        internal int OperationKind => _bitmapCompletion is null ? 2 : 1;
+        internal int OperationKind => _bitmapCompletion is not null ? 1 : _bitmapsCompletion is not null ? 3 :
+            PageIndexes.Length == 1 ? 2 : 4;
         internal OutputTarget Target { get; }
-        internal int PageIndex { get; }
+        internal int[] PageIndexes { get; }
         internal PdfImageConversionOptions Options { get; }
         internal string? Password { get; }
         internal CancellationToken CancellationToken { get; }
         internal Task<PdfBitmap> BitmapTask => _bitmapCompletion!.Task;
+        internal Task<IReadOnlyList<PdfBitmap>> BitmapsTask => _bitmapsCompletion!.Task;
         internal Task SaveTask => _saveCompletion!.Task;
+        internal long? MaximumInputBytes { get; }
+        internal long? MaximumBitmapBytes { get; }
+        internal long? MaximumOutputBytes { get; }
 
         internal static OrchestrationJob CreateBitmap(
             long requestId,
@@ -1063,17 +1377,38 @@ public sealed class PdfRenderOrchestrator : IDisposable
             int pageIndex,
             PdfImageConversionOptions options,
             string? password,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            long? maximumInputBytes,
+            long? maximumBitmapBytes,
+            long? maximumOutputBytes)
         {
             return new OrchestrationJob(
                 requestId,
                 source,
                 new BitmapOutputTarget(),
-                pageIndex,
+                new[] { pageIndex },
                 options,
                 password,
                 cancellationToken,
-                true);
+                1,
+                maximumInputBytes,
+                maximumBitmapBytes,
+                maximumOutputBytes);
+        }
+
+        internal static OrchestrationJob CreateBitmapBatch(
+            long requestId,
+            InputSource source,
+            int[] pageIndexes,
+            PdfImageConversionOptions options,
+            string? password,
+            CancellationToken cancellationToken,
+            long? maximumInputBytes,
+            long? maximumBitmapBytes,
+            long? maximumOutputBytes)
+        {
+            return new OrchestrationJob(requestId, source, new BitmapOutputTarget(), pageIndexes, options, password,
+                cancellationToken, 2, maximumInputBytes, maximumBitmapBytes, maximumOutputBytes);
         }
 
         internal static OrchestrationJob CreateSave(
@@ -1083,17 +1418,37 @@ public sealed class PdfRenderOrchestrator : IDisposable
             int pageIndex,
             PdfImageConversionOptions options,
             string? password,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            long? maximumInputBytes,
+            long? maximumOutputBytes)
         {
             return new OrchestrationJob(
                 requestId,
                 source,
                 target,
-                pageIndex,
+                new[] { pageIndex },
                 options,
                 password,
                 cancellationToken,
-                false);
+                0,
+                maximumInputBytes,
+                null,
+                maximumOutputBytes);
+        }
+
+        internal static OrchestrationJob CreateSaveBatch(
+            long requestId,
+            InputSource source,
+            int[] pageIndexes,
+            BatchPathOutputTarget target,
+            PdfImageConversionOptions options,
+            string? password,
+            CancellationToken cancellationToken,
+            long? maximumInputBytes,
+            long? maximumOutputBytes)
+        {
+            return new OrchestrationJob(requestId, source, target, pageIndexes, options, password,
+                cancellationToken, 0, maximumInputBytes, null, maximumOutputBytes);
         }
 
         internal WorkerRequest CreateRequest()
@@ -1104,18 +1459,38 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 SourcePath = Source.Path,
                 OutputKind = Target.Kind,
                 OutputPath = Target.Path,
-                PageIndex = PageIndex,
+                PageIndex = PageIndexes[0],
+                PageIndexes = PageIndexes.Length == 1 ? Array.Empty<int>() : PageIndexes,
+                OutputPaths = Target is BatchPathOutputTarget batchTarget
+                    ? batchTarget.Paths
+                    : Array.Empty<string>(),
                 Password = Password,
                 Options = Options,
+                MaximumInputBytes = MaximumInputBytes,
+                MaximumBitmapBytes = MaximumBitmapBytes,
+                MaximumOutputBytes = MaximumOutputBytes,
             };
         }
 
-        internal void Complete(PdfBitmap? bitmap)
+        internal void Complete(IReadOnlyList<PdfBitmap>? bitmaps)
         {
             if (_bitmapCompletion is not null)
             {
-                _bitmapCompletion.TrySetResult(bitmap ??
-                    throw new PdfWorkerProtocolException("The worker did not return a bitmap."));
+                if (bitmaps is null || bitmaps.Count != 1)
+                {
+                    throw new PdfWorkerProtocolException("The worker did not return exactly one bitmap.");
+                }
+
+                _bitmapCompletion.TrySetResult(bitmaps[0]);
+            }
+            else if (_bitmapsCompletion is not null)
+            {
+                if (bitmaps is null || bitmaps.Count != PageIndexes.Length)
+                {
+                    throw new PdfWorkerProtocolException("The worker returned an unexpected number of bitmaps.");
+                }
+
+                _bitmapsCompletion.TrySetResult(bitmaps);
             }
             else
             {
@@ -1129,6 +1504,10 @@ public sealed class PdfRenderOrchestrator : IDisposable
             {
                 _bitmapCompletion.TrySetException(exception);
             }
+            else if (_bitmapsCompletion is not null)
+            {
+                _bitmapsCompletion.TrySetException(exception);
+            }
             else
             {
                 _saveCompletion!.TrySetException(exception);
@@ -1140,6 +1519,10 @@ public sealed class PdfRenderOrchestrator : IDisposable
             if (_bitmapCompletion is not null)
             {
                 _bitmapCompletion.TrySetCanceled();
+            }
+            else if (_bitmapsCompletion is not null)
+            {
+                _bitmapsCompletion.TrySetCanceled();
             }
             else
             {
@@ -1159,22 +1542,27 @@ public sealed class PdfRenderOrchestrator : IDisposable
     private sealed class WorkerSlot : IDisposable
     {
         private readonly TimeSpan _startupTimeout;
+        private readonly string? _temporaryDirectory;
         private WorkerConnection? _connection;
 
-        internal WorkerSlot(int index, TimeSpan startupTimeout)
+        internal WorkerSlot(int index, TimeSpan startupTimeout, string? temporaryDirectory)
         {
             Index = index;
             _startupTimeout = startupTimeout;
+            _temporaryDirectory = temporaryDirectory;
         }
 
         internal int Index { get; }
 
         internal async Task StartAsync()
         {
-            _connection = await WorkerConnection.StartAsync(Index, _startupTimeout).ConfigureAwait(false);
+            _connection = await WorkerConnection.StartAsync(Index, _startupTimeout, _temporaryDirectory)
+                .ConfigureAwait(false);
         }
 
-        internal Task<PdfBitmap?> ExecuteAsync(OrchestrationJob job, CancellationToken cancellationToken)
+        internal Task<IReadOnlyList<PdfBitmap>?> ExecuteAsync(
+            OrchestrationJob job,
+            CancellationToken cancellationToken)
         {
             return (_connection ?? throw new PdfWorkerStartupException("The worker is not connected."))
                 .ExecuteAsync(job, cancellationToken);
@@ -1244,12 +1632,15 @@ public sealed class PdfRenderOrchestrator : IDisposable
             }
         }
 
-        internal static async Task<WorkerConnection> StartAsync(int index, TimeSpan startupTimeout)
+        internal static async Task<WorkerConnection> StartAsync(
+            int index,
+            TimeSpan startupTimeout,
+            string? temporaryDirectoryRoot)
         {
             var pipeName = $"pdr-{index:x}-{Guid.NewGuid():N}".Substring(0, 24);
             var token = CreateToken();
             var temporaryDirectory = Path.Combine(
-                Path.GetTempPath(),
+                temporaryDirectoryRoot ?? Path.GetTempPath(),
                 $"pdfium-raster-worker-{Guid.NewGuid():N}");
             var pipe = new NamedPipeServerStream(
                 pipeName,
@@ -1326,7 +1717,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             }
         }
 
-        internal async Task<PdfBitmap?> ExecuteAsync(
+        internal async Task<IReadOnlyList<PdfBitmap>?> ExecuteAsync(
             OrchestrationJob job,
             CancellationToken cancellationToken)
         {
@@ -1352,6 +1743,8 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 var width = 0;
                 var height = 0;
                 var stride = 0;
+                long totalOutputBytes = 0;
+                var bitmaps = new List<PdfBitmap>();
 
                 while (true)
                 {
@@ -1361,17 +1754,37 @@ public sealed class PdfRenderOrchestrator : IDisposable
                     {
                         case WorkerMessage.BitmapHeader:
                         {
-                            if (request.OutputKind != WorkerOutputKind.Bitmap || bitmapPixels is not null)
+                            if (request.OutputKind != WorkerOutputKind.Bitmap)
                             {
                                 throw new PdfWorkerProtocolException("The worker sent an unexpected bitmap header.");
                             }
 
+                            if (bitmapPixels is not null)
+                            {
+                                if (bitmapOffset != bitmapPixels.Length)
+                                {
+                                    throw new PdfWorkerProtocolException("The worker returned an incomplete bitmap.");
+                                }
+
+                                bitmaps.Add(new PdfBitmap(width, height, stride, bitmapPixels));
+                            }
+
                             var header = WorkerProtocol.DeserializeBitmapHeader(frame.Payload);
                             ValidateBitmapHeader(header.Width, header.Height, header.Stride, header.ByteCount);
+                            ThrowIfResourceLimitExceeded(
+                                "bitmap bytes",
+                                request.MaximumBitmapBytes,
+                                header.ByteCount);
+                            totalOutputBytes = checked(totalOutputBytes + header.ByteCount);
+                            ThrowIfResourceLimitExceeded(
+                                "output bytes",
+                                request.MaximumOutputBytes,
+                                totalOutputBytes);
                             width = header.Width;
                             height = header.Height;
                             stride = header.Stride;
                             bitmapPixels = new byte[header.ByteCount];
+                            bitmapOffset = 0;
                             break;
                         }
                         case WorkerMessage.OutputChunk:
@@ -1388,6 +1801,11 @@ public sealed class PdfRenderOrchestrator : IDisposable
                             }
                             else if (request.OutputKind == WorkerOutputKind.Stream)
                             {
+                                totalOutputBytes = checked(totalOutputBytes + frame.Payload.Length);
+                                ThrowIfResourceLimitExceeded(
+                                    "output bytes",
+                                    request.MaximumOutputBytes,
+                                    totalOutputBytes);
                                 await job.Target.Stream!.WriteAsync(
                                         frame.Payload,
                                         0,
@@ -1409,7 +1827,15 @@ public sealed class PdfRenderOrchestrator : IDisposable
                                     throw new PdfWorkerProtocolException("The worker returned an incomplete bitmap.");
                                 }
 
-                                return new PdfBitmap(width, height, stride, bitmapPixels);
+                                bitmaps.Add(new PdfBitmap(width, height, stride, bitmapPixels));
+                                var expectedCount = request.PageIndexes.Length == 0 ? 1 : request.PageIndexes.Length;
+                                if (bitmaps.Count != expectedCount)
+                                {
+                                    throw new PdfWorkerProtocolException(
+                                        "The worker returned an unexpected number of bitmaps.");
+                                }
+
+                                return bitmaps.AsReadOnly();
                             }
 
                             return null;
@@ -1418,6 +1844,11 @@ public sealed class PdfRenderOrchestrator : IDisposable
                             var error = WorkerProtocol.DeserializeError(frame.Payload);
                             throw new PdfWorkerRemoteException(error.Type, error.Message);
                         }
+                        case WorkerMessage.ResourceLimit:
+                        {
+                            var limit = WorkerProtocol.DeserializeResourceLimit(frame.Payload);
+                            throw new PdfRenderResourceLimitException(limit.Resource, limit.Limit, limit.Observed);
+                        }
                         default:
                             throw new PdfWorkerProtocolException(
                                 $"The worker sent unexpected message {frame.Message} while processing a request.");
@@ -1425,6 +1856,10 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 }
             }
             catch (PdfWorkerRemoteException)
+            {
+                throw;
+            }
+            catch (PdfRenderResourceLimitException)
             {
                 throw;
             }

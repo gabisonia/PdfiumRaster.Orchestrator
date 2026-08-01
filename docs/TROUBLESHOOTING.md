@@ -13,6 +13,7 @@ identity; they are not remote services or a security sandbox.
 | `PdfWorkerTimeoutException` | Compare `RequestTimeout` with PDF size, rendering dimensions, encoding cost, and stream throughput. The failed request is not retried. |
 | `PdfWorkerProtocolException` | Ensure the client library and packaged worker came from the same compatible package; remove stale copied workers and rebuild the application output. |
 | `PdfWorkerRemoteException` | Inspect `RemoteExceptionType` and the exception message. The worker remained connected and reported a rendering, validation, or encoding failure. |
+| `PdfRenderResourceLimitException` | Inspect `Resource`, `Limit`, and `Observed`; reduce input size/render dimensions/batch size or deliberately raise the corresponding byte limit. |
 | `SocketException` or `UnauthorizedAccessException` mentioning pipes | Check sandbox policy, service identity, temporary-directory access, and whether local named pipes or their platform backing primitives are prohibited. |
 
 ## Worker discovery and execution
@@ -89,6 +90,17 @@ If spooling fails, check temporary-volume capacity, inode availability, filesyst
 policies. A process crash can briefly leave files until orchestrator cleanup runs. Applications with stronger
 confidentiality requirements should place the system temporary directory on encrypted storage.
 
+Set `PdfRenderOrchestratorOptions.TemporaryDirectory` to move worker spool directories to a controlled volume. The
+orchestrator creates the parent if necessary; each child directory is still owner-only on Unix and is deleted when its
+worker connection is disposed. This controls placement, not capacity. Use `MaximumInputBytes` and filesystem quotas or
+container limits to bound consumption.
+
+Path outputs are encoded to a temporary file in the destination directory and atomically moved into place only after
+encoding and `MaximumOutputBytes` validation succeed. Ensure that destination volumes have room for the staged file.
+Earlier files from a multi-page save batch remain committed if a later page fails.
+A process kill or operating-system crash can leave a hidden file matching `.<name>.<id>.tmp<extension>` beside the
+destination; it is never treated as a completed output and can be removed after confirming no worker is active.
+
 ## Crashes, protocol failures, and timeouts
 
 A worker crash or broken pipe faults only its active request with `PdfWorkerCrashedException`. A malformed frame,
@@ -119,7 +131,7 @@ Event IDs and payloads are:
 | ID | Event | Level | Payload | Meaning |
 | ---: | --- | --- | --- | --- |
 | 1 | `OrchestratorStarted` | Informational | `workerCount` (`Int32`), `queueCapacity` (`Int32`) | A new orchestrator started its fixed worker set. |
-| 2 | `RequestSubmitted` | Verbose | `requestId` (`Int64`), `operationKind` (`Int32`) | A request entered submission; operation `1` renders a bitmap and `2` saves an image. |
+| 2 | `RequestSubmitted` | Verbose | `requestId` (`Int64`), `operationKind` (`Int32`) | A request entered submission; operation `1` renders one bitmap, `2` saves one image, `3` renders a bitmap batch, and `4` saves a file batch. |
 | 3 | `RequestStarted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `submissionDelayMilliseconds` (`Double`) | A zero-based worker slot received the request. Delay is elapsed milliseconds since submission. |
 | 4 | `RequestCompleted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `executionMilliseconds` (`Double`) | The request completed successfully. Duration starts at worker assignment. |
 | 5 | `RequestFailed` | Warning | `requestId` (`Int64`), `workerIndex` (`Int32`), `exceptionType` (`String`), `executionMilliseconds` (`Double`) | The request failed. The type is the fully qualified managed exception name when available. |

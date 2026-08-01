@@ -21,15 +21,20 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
 
 var pageCount = PdfImageConverter.GetPageCount("input.pdf");
 var jobs = Enumerable.Range(0, pageCount)
-    .Select(pageIndex => orchestrator.SavePageAsync(
+    .Chunk(16)
+    .Select(batch => orchestrator.SavePagesAsync(
         "input.pdf",
-        pageIndex,
-        $"page-{pageIndex + 1:D4}.png",
+        batch.Select(pageIndex => new PdfPageFileOutput(
+            pageIndex,
+            $"page-{pageIndex + 1:D4}.png")).ToArray(),
         new PdfImageConversionOptions { Format = PdfImageOutputFormat.Png }));
 
 await Task.WhenAll(jobs);
 await orchestrator.CompleteAsync();
 ```
+
+Each 16-page batch opens the PDF once; multiple batches can run on separate workers. Tune the batch size for document
+complexity, memory limits, and the desired balance between reuse and parallelism.
 
 For web applications, register `PdfRenderOrchestrator` once as a singleton and drain it from an `IHostedService` at
 host shutdown. See the compilable [`AspNetLifecycle`](AspNetLifecycle/) sample and the

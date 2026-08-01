@@ -43,6 +43,11 @@ named-pipe transfer overhead for in-memory inputs and outputs.
 dotnet add package PdfiumRaster.Orchestrator
 ```
 
+The package above contains every supported worker and is the simplest choice for applications deployed to multiple
+platforms. To reduce restore and deployment size when the target runtime is known, install exactly one slim package,
+for example `PdfiumRaster.Orchestrator.linux-x64`, and build or publish for that RID. See
+[worker package choices](docs/API.md#worker-package-choices).
+
 ```csharp
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
@@ -52,6 +57,9 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
     WorkerCount = Math.Min(Environment.ProcessorCount, 4),
     QueueCapacity = 42,
     RequestTimeout = TimeSpan.FromSeconds(30),
+    MaximumInputBytes = 512L * 1024 * 1024,
+    MaximumBitmapBytes = 256L * 1024 * 1024,
+    MaximumOutputBytes = 512L * 1024 * 1024,
 });
 
 var first = orchestrator.RenderPageAsync("first.pdf", pageIndex: 0);
@@ -70,9 +78,26 @@ and caller-owned stream outputs. Input streams are read from their current posit
 the orchestrator owns and disposes an input stream after completion, cancellation, validation failure, or queue
 rejection. Output streams always remain caller-owned.
 
+For several pages from the same document, use `RenderPagesAsync` or `SavePagesAsync`. One batch is one scheduled
+request: its worker transfers and opens the PDF once, reuses a `PdfRenderSession`, and processes pages in the supplied
+order. Split very large exports into several batches to use multiple workers concurrently.
+
+```csharp
+var pages = await orchestrator.RenderPagesAsync("report.pdf", new[] { 0, 1, 2 });
+
+await orchestrator.SavePagesAsync("report.pdf", new[]
+{
+    new PdfPageFileOutput(0, "page-1.png"),
+    new PdfPageFileOutput(1, "page-2.png"),
+});
+```
+
 Workers run locally with the same operating-system identity and filesystem permissions as the calling application.
 They isolate PDFium crashes and make hard timeouts possible, but they are not a security sandbox. Prefer path inputs for
 large PDFs; byte-array and stream inputs must cross a named pipe and are spooled to a worker-owned temporary file.
+`TemporaryDirectory` can place those private worker directories on a controlled volume. Optional input, per-bitmap,
+and total-output byte limits fail with `PdfRenderResourceLimitException`; they are unlimited by default for backward
+compatibility.
 
 `WorkerCount` defaults to the smaller of four and the logical processor count, and cannot exceed that processor count.
 `RequestTimeout` is disabled by default. It starts when a request is dispatched and covers input transfer, rendering,

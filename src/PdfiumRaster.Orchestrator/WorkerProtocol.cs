@@ -17,6 +17,7 @@ internal enum WorkerMessage : byte
     Complete = 8,
     Error = 9,
     Shutdown = 10,
+    ResourceLimit = 11,
 }
 
 internal enum WorkerSourceKind : byte
@@ -51,13 +52,18 @@ internal sealed class WorkerRequest
     internal WorkerOutputKind OutputKind { get; set; }
     internal string? OutputPath { get; set; }
     internal int PageIndex { get; set; }
+    internal int[] PageIndexes { get; set; } = Array.Empty<int>();
+    internal string[] OutputPaths { get; set; } = Array.Empty<string>();
     internal string? Password { get; set; }
     internal PdfImageConversionOptions Options { get; set; } = new();
+    internal long? MaximumInputBytes { get; set; }
+    internal long? MaximumBitmapBytes { get; set; }
+    internal long? MaximumOutputBytes { get; set; }
 }
 
 internal static class WorkerProtocol
 {
-    internal const int Version = 1;
+    internal const int Version = 2;
     internal const int ChunkSize = 64 * 1024;
     internal const int MaximumControlPayload = 1024 * 1024;
     internal const PipeOptions LocalPipeOptions = PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
@@ -188,6 +194,21 @@ internal static class WorkerProtocol
             writer.Write(request.PageIndex);
             WriteNullableString(writer, request.Password);
             WriteOptions(writer, request.Options);
+            writer.Write(request.PageIndexes.Length);
+            foreach (var pageIndex in request.PageIndexes)
+            {
+                writer.Write(pageIndex);
+            }
+
+            writer.Write(request.OutputPaths.Length);
+            foreach (var outputPath in request.OutputPaths)
+            {
+                writer.Write(outputPath);
+            }
+
+            WriteNullableInt64(writer, request.MaximumInputBytes);
+            WriteNullableInt64(writer, request.MaximumBitmapBytes);
+            WriteNullableInt64(writer, request.MaximumOutputBytes);
         });
     }
 
@@ -205,6 +226,12 @@ internal static class WorkerProtocol
                 Password = ReadNullableString(reader),
                 Options = ReadOptions(reader),
             };
+
+            request.PageIndexes = ReadInt32Array(reader);
+            request.OutputPaths = ReadStringArray(reader);
+            request.MaximumInputBytes = ReadNullableInt64(reader);
+            request.MaximumBitmapBytes = ReadNullableInt64(reader);
+            request.MaximumOutputBytes = ReadNullableInt64(reader);
 
             if (!Enum.IsDefined(typeof(WorkerSourceKind), request.SourceKind) ||
                 !Enum.IsDefined(typeof(WorkerOutputKind), request.OutputKind))
@@ -245,6 +272,21 @@ internal static class WorkerProtocol
     internal static (string Type, string Message) DeserializeError(byte[] payload)
     {
         return Deserialize(payload, reader => (reader.ReadString(), reader.ReadString()));
+    }
+
+    internal static byte[] SerializeResourceLimit(PdfRenderResourceLimitException exception)
+    {
+        return Serialize(writer =>
+        {
+            writer.Write(exception.Resource);
+            writer.Write(exception.Limit);
+            writer.Write(exception.Observed);
+        });
+    }
+
+    internal static (string Resource, long Limit, long Observed) DeserializeResourceLimit(byte[] payload)
+    {
+        return Deserialize(payload, reader => (reader.ReadString(), reader.ReadInt64(), reader.ReadInt64()));
     }
 
     private static async Task ReadExactlyAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
@@ -375,5 +417,53 @@ internal static class WorkerProtocol
     private static int? ReadNullableInt32(BinaryReader reader)
     {
         return reader.ReadBoolean() ? reader.ReadInt32() : null;
+    }
+
+    private static void WriteNullableInt64(BinaryWriter writer, long? value)
+    {
+        writer.Write(value.HasValue);
+        if (value.HasValue)
+        {
+            writer.Write(value.Value);
+        }
+    }
+
+    private static long? ReadNullableInt64(BinaryReader reader)
+    {
+        return reader.ReadBoolean() ? reader.ReadInt64() : null;
+    }
+
+    private static int[] ReadInt32Array(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        if (count < 0 || count > MaximumControlPayload / sizeof(int))
+        {
+            throw new PdfWorkerProtocolException("The worker request contains an invalid page count.");
+        }
+
+        var values = new int[count];
+        for (var index = 0; index < count; index++)
+        {
+            values[index] = reader.ReadInt32();
+        }
+
+        return values;
+    }
+
+    private static string[] ReadStringArray(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        if (count < 0 || count > MaximumControlPayload)
+        {
+            throw new PdfWorkerProtocolException("The worker request contains an invalid output-path count.");
+        }
+
+        var values = new string[count];
+        for (var index = 0; index < count; index++)
+        {
+            values[index] = reader.ReadString();
+        }
+
+        return values;
     }
 }

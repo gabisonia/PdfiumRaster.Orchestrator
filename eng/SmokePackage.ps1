@@ -3,7 +3,9 @@ param(
     [string] $RepositoryRoot,
 
     [Parameter(Mandatory = $true)]
-    [string] $PackageVersion
+    [string] $PackageVersion,
+
+    [string] $PackageId = 'PdfiumRaster.Orchestrator'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +27,7 @@ try {
             --configfile nuget.config
         if ($LASTEXITCODE -ne 0) { throw 'Local package source configuration failed.' }
 
-        dotnet add package PdfiumRaster.Orchestrator --version $PackageVersion --no-restore
+        dotnet add package $PackageId --version $PackageVersion --no-restore
         if ($LASTEXITCODE -ne 0) { throw 'Package installation failed.' }
 
         dotnet restore --configfile nuget.config

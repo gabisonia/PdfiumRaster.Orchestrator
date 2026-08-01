@@ -11,6 +11,11 @@ public sealed class PdfRenderOrchestratorOptions
     private PdfRenderQueueFullMode _queueFullMode;
     private TimeSpan? _requestTimeout;
     private TimeSpan _workerStartupTimeout = TimeSpan.FromSeconds(15);
+    private int _maximumBatchPages = 256;
+    private long? _maximumInputBytes;
+    private long? _maximumBitmapBytes;
+    private long? _maximumOutputBytes;
+    private string? _temporaryDirectory;
     private TimeSpan[] _workerRestartDelays =
     {
         TimeSpan.FromMilliseconds(250),
@@ -159,5 +164,92 @@ public sealed class PdfRenderOrchestratorOptions
 
             _workerRestartDelays = snapshot;
         }
+    }
+
+    /// <summary>
+    /// Gets or sets the maximum number of pages accepted by one batch request. The default is 256.
+    /// </summary>
+    public int MaximumBatchPages
+    {
+        get => _maximumBatchPages;
+        set
+        {
+            if (value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Maximum batch pages must be greater than zero.");
+            }
+
+            _maximumBatchPages = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the optional maximum PDF input size per request, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// The limit applies to paths, byte arrays, and streams. The default is <see langword="null" />, which is
+    /// unlimited. Path lengths are checked by the worker immediately before opening the file.
+    /// </remarks>
+    public long? MaximumInputBytes
+    {
+        get => _maximumInputBytes;
+        set => _maximumInputBytes = ValidateOptionalByteLimit(value);
+    }
+
+    /// <summary>
+    /// Gets or sets the optional maximum uncompressed pixel-buffer size of each returned bitmap, in bytes.
+    /// </summary>
+    /// <remarks>The default is <see langword="null" />, which is unlimited.</remarks>
+    public long? MaximumBitmapBytes
+    {
+        get => _maximumBitmapBytes;
+        set => _maximumBitmapBytes = ValidateOptionalByteLimit(value);
+    }
+
+    /// <summary>
+    /// Gets or sets the optional maximum total response size per request, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// The limit covers returned bitmap pixels and encoded stream or file outputs. In a multi-file batch, files
+    /// completed before a later item exceeds the aggregate limit remain in place. The default is
+    /// <see langword="null" />, which is unlimited.
+    /// </remarks>
+    public long? MaximumOutputBytes
+    {
+        get => _maximumOutputBytes;
+        set => _maximumOutputBytes = ValidateOptionalByteLimit(value);
+    }
+
+    /// <summary>
+    /// Gets or sets the optional parent directory used for private worker temporary directories.
+    /// </summary>
+    /// <remarks>
+    /// The directory is created if necessary and the value is converted to an absolute path when assigned. The
+    /// default is <see langword="null" />, which uses the operating system temporary directory.
+    /// </remarks>
+    public string? TemporaryDirectory
+    {
+        get => _temporaryDirectory;
+        set
+        {
+            if (value is not null && string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException("Temporary directory cannot be whitespace.", nameof(value));
+            }
+
+            _temporaryDirectory = value is null ? null : Path.GetFullPath(value);
+        }
+    }
+
+    private static long? ValidateOptionalByteLimit(long? value)
+    {
+        if (value.HasValue && value.Value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value,
+                "Byte limits must be greater than zero or null.");
+        }
+
+        return value;
     }
 }

@@ -12,7 +12,7 @@ on:
           - beta
           - stable
       version:
-        description: "Package version. Stable example: 0.4.0. Beta input can be 0.5.0 or 0.5.0-beta.1."
+        description: "Package version. Stable example: 0.5.0. Beta input can be 0.6.0 or 0.6.0-beta.1."
         required: true
         type: string
       nuget_user:
@@ -49,7 +49,7 @@ jobs:
 
           if [[ "$channel" == "stable" ]]; then
             if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Stable releases require a SemVer version such as 0.4.0." >&2
+              echo "Stable releases require a SemVer version such as 0.5.0." >&2
               exit 1
             fi
             package_version="$input_version"
@@ -95,6 +95,9 @@ jobs:
 
       - name: Smoke test packaged worker
         run: make smoke-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+
+      - name: Smoke test slim packaged worker
+        run: make smoke-slim-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4

@@ -82,6 +82,30 @@ public sealed class PdfWorkerTimeoutException : PdfWorkerException
 }
 
 /// <summary>
+/// The exception thrown when a request exceeds a configured input, bitmap, or output byte limit.
+/// </summary>
+public sealed class PdfRenderResourceLimitException : PdfWorkerException
+{
+    internal PdfRenderResourceLimitException(string resource, long limit, long observed)
+        : base($"The PDF render request exceeded the {resource} limit of {limit} bytes; " +
+               $"at least {observed} bytes were observed.")
+    {
+        Resource = resource;
+        Limit = limit;
+        Observed = observed;
+    }
+
+    /// <summary>Gets the stable name of the resource whose limit was exceeded.</summary>
+    public string Resource { get; }
+
+    /// <summary>Gets the configured maximum number of bytes.</summary>
+    public long Limit { get; }
+
+    /// <summary>Gets the number of bytes observed when the request was rejected.</summary>
+    public long Observed { get; }
+}
+
+/// <summary>
 /// The exception thrown when a worker reports a rendering, validation, or image-encoding failure.
 /// </summary>
 public sealed class PdfWorkerRemoteException : PdfWorkerException

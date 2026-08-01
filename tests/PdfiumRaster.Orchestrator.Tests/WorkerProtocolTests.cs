@@ -14,10 +14,10 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public async Task VersionOneHelloFrameMatchesGoldenVector()
+    public async Task VersionTwoHelloFrameMatchesGoldenVector()
     {
-        Assert.Equal(1, WorkerProtocol.Version);
-        var expected = Convert.FromHexString("0B000000010100000005746F6B656E");
+        Assert.Equal(2, WorkerProtocol.Version);
+        var expected = Convert.FromHexString("0B000000010200000005746F6B656E");
         using var stream = new MemoryStream();
 
         await WorkerProtocol.WriteFrameAsync(
@@ -30,12 +30,13 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public void VersionOneRequestPayloadMatchesGoldenVector()
+    public void VersionTwoRequestPayloadMatchesGoldenVector()
     {
         var expected = Convert.FromHexString(
             "01010E2F746D702F696E7075742E70646602010F2F746D702F6F75747075742E706E67" +
             "0300000001067365637265740000000000006240000000000000F83F0100000001000000" +
-            "0120030000000001000000302010FF0001000000510000000102000000010000005A");
+            "0120030000000001000000302010FF0001000000510000000102000000010000005A" +
+            "0000000000000000000000");
 
         var actual = WorkerProtocol.SerializeRequest(CreateGoldenRequest());
 
@@ -43,7 +44,7 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public void VersionOneResponsePayloadsMatchGoldenVectors()
+    public void VersionTwoResponsePayloadsMatchGoldenVectors()
     {
         var expectedBitmapHeader = Convert.FromHexString("02000000030000000800000018000000");
         var expectedError = Convert.FromHexString(
@@ -53,6 +54,28 @@ public sealed class WorkerProtocolTests
             expectedBitmapHeader,
             WorkerProtocol.SerializeBitmapHeader(width: 2, height: 3, stride: 8, byteCount: 24));
         Assert.Equal(expectedError, WorkerProtocol.SerializeError(new InvalidOperationException("bad")));
+    }
+
+    [Fact]
+    public void BatchAndResourceLimitsRoundTrip()
+    {
+        var request = CreateGoldenRequest();
+        request.PageIndexes = new[] { 3, 1 };
+        request.OutputPaths = new[] { "/tmp/3.png", "/tmp/1.png" };
+        request.MaximumInputBytes = 100;
+        request.MaximumBitmapBytes = 200;
+        request.MaximumOutputBytes = 300;
+
+        var actual = WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request));
+
+        Assert.Equal(request.PageIndexes, actual.PageIndexes);
+        Assert.Equal(request.OutputPaths, actual.OutputPaths);
+        Assert.Equal(100, actual.MaximumInputBytes);
+        Assert.Equal(200, actual.MaximumBitmapBytes);
+        Assert.Equal(300, actual.MaximumOutputBytes);
+        var limit = WorkerProtocol.DeserializeResourceLimit(
+            WorkerProtocol.SerializeResourceLimit(new PdfRenderResourceLimitException("output bytes", 10, 11)));
+        Assert.Equal(("output bytes", 10L, 11L), limit);
     }
 
     [Fact]
@@ -231,6 +254,17 @@ public sealed class WorkerProtocolTests
         request.SourceKind = (WorkerSourceKind)byte.MaxValue;
         Assert.Throws<PdfWorkerProtocolException>(
             () => WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request)));
+
+        request.SourceKind = WorkerSourceKind.Path;
+        var invalidPageCount = WorkerProtocol.SerializeRequest(request);
+        BinaryPrimitives.WriteInt32LittleEndian(invalidPageCount.AsSpan(invalidPageCount.Length - 11, 4), -1);
+        Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializeRequest(invalidPageCount));
+
+        var invalidPathCount = WorkerProtocol.SerializeRequest(request);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            invalidPathCount.AsSpan(invalidPathCount.Length - 7, 4),
+            WorkerProtocol.MaximumControlPayload + 1);
+        Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializeRequest(invalidPathCount));
     }
 
     [Fact]
@@ -276,6 +310,8 @@ public sealed class WorkerProtocolTests
             () => WorkerProtocol.DeserializeBitmapHeader(Array.Empty<byte>()));
         Assert.Throws<PdfWorkerProtocolException>(
             () => WorkerProtocol.DeserializeError(new byte[] { 1 }));
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.DeserializeResourceLimit(Array.Empty<byte>()));
     }
 
     [Fact]

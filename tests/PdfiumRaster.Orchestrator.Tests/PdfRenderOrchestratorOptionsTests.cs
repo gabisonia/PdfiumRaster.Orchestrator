@@ -12,6 +12,11 @@ public sealed class PdfRenderOrchestratorOptionsTests
         Assert.Equal(PdfRenderQueueFullMode.Wait, options.QueueFullMode);
         Assert.Null(options.RequestTimeout);
         Assert.Equal(TimeSpan.FromSeconds(15), options.WorkerStartupTimeout);
+        Assert.Equal(256, options.MaximumBatchPages);
+        Assert.Null(options.MaximumInputBytes);
+        Assert.Null(options.MaximumBitmapBytes);
+        Assert.Null(options.MaximumOutputBytes);
+        Assert.Null(options.TemporaryDirectory);
         Assert.Equal(
             new[] { TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(4) },
             options.WorkerRestartDelays);
@@ -82,5 +87,29 @@ public sealed class PdfRenderOrchestratorOptionsTests
             () => options.WorkerRestartDelays = new[] { TimeSpan.FromMilliseconds(-1) });
         Assert.Throws<ArgumentOutOfRangeException>(
             () => options.WorkerRestartDelays = new[] { TimeSpan.MaxValue });
+    }
+
+    [Fact]
+    public void BatchResourceAndTemporaryDirectoryOptionsAreValidated()
+    {
+        var options = new PdfRenderOrchestratorOptions();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.MaximumBatchPages = 0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.MaximumInputBytes = 0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.MaximumBitmapBytes = -1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.MaximumOutputBytes = 0);
+        Assert.Throws<ArgumentException>(() => options.TemporaryDirectory = " ");
+
+        options.MaximumBatchPages = 12;
+        options.MaximumInputBytes = 100;
+        options.MaximumBitmapBytes = 200;
+        options.MaximumOutputBytes = 300;
+        options.TemporaryDirectory = ".";
+
+        Assert.Equal(12, options.MaximumBatchPages);
+        Assert.Equal(100, options.MaximumInputBytes);
+        Assert.Equal(200, options.MaximumBitmapBytes);
+        Assert.Equal(300, options.MaximumOutputBytes);
+        Assert.Equal(Path.GetFullPath("."), options.TemporaryDirectory);
     }
 }

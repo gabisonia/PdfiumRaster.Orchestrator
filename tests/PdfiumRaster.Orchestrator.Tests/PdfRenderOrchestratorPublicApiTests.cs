@@ -143,6 +143,37 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
             0,
             writable,
             new PdfImageConversionOptions { ColorMode = (PdfImageColorMode)int.MaxValue }));
+
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => orchestrator.RenderPagesAsync(bytes, null!));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => orchestrator.RenderPagesAsync(bytes, Array.Empty<int>()));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => orchestrator.RenderPagesAsync(bytes, new[] { -1 }));
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => orchestrator.SavePagesAsync(bytes, null!));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => orchestrator.SavePagesAsync(bytes, Array.Empty<PdfPageFileOutput>()));
+        await Assert.ThrowsAsync<ArgumentException>(() => orchestrator.SavePagesAsync(bytes, new[]
+        {
+            new PdfPageFileOutput(0, "same.png"),
+            new PdfPageFileOutput(0, "same.png"),
+        }));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => orchestrator.SavePagesAsync(bytes, new PdfPageFileOutput[] { null! }));
+
+        using var onePageBatch = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 1,
+            MaximumBatchPages = 1,
+        });
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => onePageBatch.RenderPagesAsync(bytes, new[] { 0, 0 }));
+        await onePageBatch.CompleteAsync();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PdfPageFileOutput(-1, "output.png"));
+        Assert.Throws<ArgumentException>(() => new PdfPageFileOutput(0, " "));
     }
 
     [Fact]

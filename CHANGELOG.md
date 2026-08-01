@@ -3,7 +3,23 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.4.0 - Unreleased
+## 0.5.0 - Unreleased
+
+### Added
+
+- Add open-once `RenderPagesAsync` and `SavePagesAsync` batches for path, byte-array, and stream PDF inputs.
+- Add configurable input, per-bitmap, aggregate-output, batch-page, and worker temporary-directory limits, with
+  structured `PdfRenderResourceLimitException` failures.
+- Add slim `PdfiumRaster.Orchestrator.<rid>` packages containing one worker while retaining the all-runtime package.
+
+### Changed
+
+- Stage path output beside its destination and atomically replace the destination only after encoding and output-limit
+  validation succeeds.
+- Advance the private worker protocol to version 2 for batch metadata, resource limits, repeated bitmap results, and
+  structured resource-limit responses.
+
+## 0.4.0 - 2026-08-01
 
 ### Fixed
 

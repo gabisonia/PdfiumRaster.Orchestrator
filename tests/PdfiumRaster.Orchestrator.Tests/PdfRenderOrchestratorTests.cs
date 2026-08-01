@@ -91,6 +91,222 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task BatchRenderAndSaveReuseOneRequestAndPreserveOrder()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        var bytes = await File.ReadAllBytesAsync(pdfPath);
+        var outputDirectory = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outputDirectory);
+        var options = new PdfImageConversionOptions
+        {
+            Render = PdfPageRenderOptions.ScreenPreview,
+            Format = PdfImageOutputFormat.Png,
+        };
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 6,
+        });
+
+        var fromPath = orchestrator.RenderPagesAsync(pdfPath, new[] { 0, 0 }, options);
+        var fromBytes = orchestrator.RenderPagesAsync(bytes, new[] { 0, 0 }, options);
+        var fromStream = orchestrator.RenderPagesAsync(stream, new[] { 0, 0 }, options, leaveOpen: true);
+        var pathFiles = new[]
+        {
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "path-1.png")),
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "path-2.png")),
+        };
+        var byteFiles = new[]
+        {
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "bytes-1.png")),
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "bytes-2.png")),
+        };
+        using var saveStream = new MemoryStream(bytes, writable: false);
+        var streamFiles = new[]
+        {
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "stream-1.png")),
+            new PdfPageFileOutput(0, Path.Combine(outputDirectory, "stream-2.png")),
+        };
+
+        await Task.WhenAll(
+            fromPath,
+            fromBytes,
+            fromStream,
+            orchestrator.SavePagesAsync(pdfPath, pathFiles, options),
+            orchestrator.SavePagesAsync(bytes, byteFiles, options),
+            orchestrator.SavePagesAsync(saveStream, streamFiles, options, leaveOpen: true));
+        await orchestrator.CompleteAsync();
+
+        foreach (var batch in new[] { await fromPath, await fromBytes, await fromStream })
+        {
+            Assert.Equal(2, batch.Count);
+            Assert.Equal(batch[0].Pixels, batch[1].Pixels);
+        }
+
+        Assert.True(stream.CanRead);
+        Assert.True(saveStream.CanRead);
+        Assert.Equal(6, Directory.GetFiles(outputDirectory, "*.png").Length);
+        Assert.All(Directory.GetFiles(outputDirectory, "*.png"), path => Assert.True(new FileInfo(path).Length > 8));
+    }
+
+    [Fact]
+    public async Task ResourceLimitsRejectInputsBitmapsAndAtomicFileOutputs()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        var bytes = await File.ReadAllBytesAsync(pdfPath);
+        using var inputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            MaximumInputBytes = bytes.Length - 1,
+        });
+        var inputException = Assert.Throws<PdfRenderResourceLimitException>(() =>
+        {
+            _ = inputLimited.RenderPageAsync(bytes, 0);
+        });
+        Assert.Equal("input bytes", inputException.Resource);
+        Assert.Equal(bytes.Length - 1, inputException.Limit);
+        Assert.Equal(bytes.Length, inputException.Observed);
+        await inputLimited.CompleteAsync();
+
+        using var bitmapLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            MaximumBitmapBytes = 1,
+        });
+        var bitmapException = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+            () => bitmapLimited.RenderPageAsync(pdfPath, 0));
+        Assert.Equal("bitmap bytes", bitmapException.Resource);
+        await bitmapLimited.CompleteAsync();
+
+        var outputPath = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid() + ".png");
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        await File.WriteAllBytesAsync(outputPath, new byte[] { 1, 2, 3 });
+        using var outputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            MaximumOutputBytes = 1,
+        });
+        var outputException = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+            () => outputLimited.SavePageAsync(pdfPath, 0, outputPath));
+        Assert.Equal("output bytes", outputException.Resource);
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(outputPath));
+        await outputLimited.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task ResourceLimitsCoverPathNonSeekableStreamEncodedStreamAndBatchTotals()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        var bytes = await File.ReadAllBytesAsync(pdfPath);
+
+        using (var pathLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+               {
+                   WorkerCount = 1,
+                   QueueCapacity = 2,
+                   MaximumInputBytes = 1,
+               }))
+        {
+            var exception = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+                () => pathLimited.RenderPageAsync(pdfPath, 0));
+            Assert.Equal("input bytes", exception.Resource);
+            await pathLimited.CompleteAsync();
+        }
+
+        using (var streamLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+               {
+                   WorkerCount = 1,
+                   QueueCapacity = 2,
+                   MaximumInputBytes = bytes.Length - 1,
+               }))
+        {
+            using var input = new NonSeekableReadStream(bytes);
+            await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+                () => streamLimited.RenderPageAsync(input, 0, leaveOpen: true));
+            await streamLimited.CompleteAsync();
+        }
+
+        using (var encodedLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+               {
+                   WorkerCount = 1,
+                   QueueCapacity = 2,
+                   MaximumOutputBytes = 1,
+               }))
+        {
+            using var output = new MemoryStream();
+            await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+                () => encodedLimited.SavePageAsync(pdfPath, 0, output));
+            Assert.True(output.CanWrite);
+            await encodedLimited.CompleteAsync();
+        }
+
+        var oneBitmap = PdfImageConverter.RenderPage(pdfPath, 0);
+        using (var batchLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+               {
+                   WorkerCount = 1,
+                   QueueCapacity = 2,
+                   MaximumOutputBytes = oneBitmap.Pixels.LongLength + 1,
+               }))
+        {
+            var exception = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
+                () => batchLimited.RenderPagesAsync(pdfPath, new[] { 0, 0 }));
+            Assert.Equal("output bytes", exception.Resource);
+            Assert.True(exception.Observed > exception.Limit);
+            await batchLimited.CompleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task SaveBatchKeepsEarlierAtomicFilesWhenAggregateLimitIsExceeded()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        var directory = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var reference = Path.Combine(directory, "reference.png");
+        PdfImageConverter.SavePage(pdfPath, 0, reference);
+        var oneFileBytes = new FileInfo(reference).Length;
+        var first = Path.Combine(directory, "first.png");
+        var second = Path.Combine(directory, "second.png");
+        await File.WriteAllBytesAsync(second, new byte[] { 7, 8, 9 });
+        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            MaximumOutputBytes = oneFileBytes + 1,
+        });
+
+        await Assert.ThrowsAsync<PdfRenderResourceLimitException>(() => orchestrator.SavePagesAsync(pdfPath, new[]
+        {
+            new PdfPageFileOutput(0, first),
+            new PdfPageFileOutput(0, second),
+        }));
+        await orchestrator.CompleteAsync();
+
+        Assert.True(new FileInfo(first).Length > 8);
+        Assert.Equal(new byte[] { 7, 8, 9 }, await File.ReadAllBytesAsync(second));
+    }
+
+    [Fact]
+    public async Task ConfiguredTemporaryDirectoryContainsAndCleansWorkerDirectory()
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid().ToString("N"));
+        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            TemporaryDirectory = root,
+        });
+        var workerDirectory = GetFirstWorkerTemporaryDirectory(orchestrator);
+
+        Assert.Equal(root, Directory.GetParent(workerDirectory)!.FullName);
+        await orchestrator.CompleteAsync();
+        Assert.False(Directory.Exists(workerDirectory));
+    }
+
+    [Fact]
     public async Task HardTimeoutTerminatesActiveWorker()
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
@@ -399,6 +615,16 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
 
             return await base.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private sealed class NonSeekableReadStream : MemoryStream
+    {
+        internal NonSeekableReadStream(byte[] bytes)
+            : base(bytes, writable: false)
+        {
+        }
+
+        public override bool CanSeek => false;
     }
 
     private sealed class AsyncReadBarrier

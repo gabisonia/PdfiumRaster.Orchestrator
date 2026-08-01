@@ -130,7 +130,7 @@ internal static class Program
                 temporaryPath = Path.Combine(
                     temporaryDirectory,
                     $"pdfium-raster-worker-{Environment.ProcessId}-{Guid.NewGuid():N}.pdf");
-                await ReceiveInputAsync(pipe, temporaryPath).ConfigureAwait(false);
+                await ReceiveInputAsync(pipe, temporaryPath, request.MaximumInputBytes).ConfigureAwait(false);
                 pdfPath = temporaryPath;
             }
 
@@ -139,33 +139,73 @@ internal static class Program
                 throw new PdfWorkerProtocolException("The request did not provide a PDF path or content.");
             }
 
+            if (request.SourceKind == WorkerSourceKind.Path)
+            {
+                ThrowIfResourceLimitExceeded(
+                    "input bytes",
+                    request.MaximumInputBytes,
+                    new FileInfo(pdfPath).Length);
+            }
+
+            var pageIndexes = request.PageIndexes.Length == 0
+                ? new[] { request.PageIndex }
+                : request.PageIndexes;
+            if (pageIndexes.Any(pageIndex => pageIndex < 0))
+            {
+                throw new PdfWorkerProtocolException("The request contains a negative page index.");
+            }
+
+            using var session = PdfRenderSession.Open(pdfPath, request.Password);
+
             switch (request.OutputKind)
             {
                 case WorkerOutputKind.Bitmap:
-                    await RenderBitmapAsync(pipe, pdfPath, request).ConfigureAwait(false);
-                    break;
-                case WorkerOutputKind.Path:
-                    if (string.IsNullOrWhiteSpace(request.OutputPath))
+                    long totalBitmapBytes = 0;
+                    foreach (var pageIndex in pageIndexes)
                     {
-                        throw new PdfWorkerProtocolException("The request did not provide an output image path.");
+                        totalBitmapBytes = await RenderBitmapAsync(
+                                pipe,
+                                session,
+                                pageIndex,
+                                request,
+                                totalBitmapBytes)
+                            .ConfigureAwait(false);
                     }
 
-                    PdfImageConverter.SavePage(
-                        pdfPath,
-                        request.PageIndex,
-                        request.OutputPath,
-                        request.Options,
-                        request.Password);
+                    break;
+                case WorkerOutputKind.Path:
+                    var outputPaths = request.OutputPaths.Length == 0
+                        ? request.OutputPath is null ? Array.Empty<string>() : new[] { request.OutputPath }
+                        : request.OutputPaths;
+                    if (outputPaths.Length != pageIndexes.Length ||
+                        outputPaths.Any(string.IsNullOrWhiteSpace))
+                    {
+                        throw new PdfWorkerProtocolException(
+                            "The request did not provide exactly one output path per page.");
+                    }
+
+                    long totalFileBytes = 0;
+                    for (var index = 0; index < pageIndexes.Length; index++)
+                    {
+                        totalFileBytes = SavePageAtomically(
+                            session,
+                            pageIndexes[index],
+                            outputPaths[index],
+                            request.Options,
+                            request.MaximumOutputBytes,
+                            totalFileBytes);
+                    }
+
                     break;
                 case WorkerOutputKind.Stream:
-                    await using (var output = new FramedOutputStream(pipe))
+                    if (pageIndexes.Length != 1)
                     {
-                        PdfImageConverter.SavePage(
-                            pdfPath,
-                            request.PageIndex,
-                            output,
-                            request.Options,
-                            request.Password);
+                        throw new PdfWorkerProtocolException("Batch stream output is not supported.");
+                    }
+
+                    await using (var output = new FramedOutputStream(pipe, request.MaximumOutputBytes))
+                    {
+                        session.SavePage(pageIndexes[0], output, request.Options);
                     }
 
                     break;
@@ -178,6 +218,17 @@ internal static class Program
         }
         catch (Exception exception)
         {
+            if (exception is PdfRenderResourceLimitException resourceLimit)
+            {
+                await WorkerProtocol.WriteFrameAsync(
+                        pipe,
+                        WorkerMessage.ResourceLimit,
+                        WorkerProtocol.SerializeResourceLimit(resourceLimit),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             var safeException = exception.Message.Length <= 64 * 1024
                 ? exception
                 : new InvalidOperationException(exception.Message.Substring(0, 64 * 1024));
@@ -204,7 +255,7 @@ internal static class Program
         }
     }
 
-    private static async Task ReceiveInputAsync(Stream pipe, string temporaryPath)
+    private static async Task ReceiveInputAsync(Stream pipe, string temporaryPath, long? maximumInputBytes)
     {
         await using var file = new FileStream(
             temporaryPath,
@@ -213,6 +264,7 @@ internal static class Program
             FileShare.None,
             WorkerProtocol.ChunkSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        long total = 0;
         while (true)
         {
             var frame = await WorkerProtocol.ReadFrameAsync(pipe, CancellationToken.None).ConfigureAwait(false);
@@ -227,19 +279,25 @@ internal static class Program
                     $"Expected PDF input bytes, but received {frame.Message}.");
             }
 
+            total = checked(total + frame.Payload.Length);
+            ThrowIfResourceLimitExceeded("input bytes", maximumInputBytes, total);
             await file.WriteAsync(frame.Payload, 0, frame.Payload.Length).ConfigureAwait(false);
         }
 
         await file.FlushAsync().ConfigureAwait(false);
     }
 
-    private static async Task RenderBitmapAsync(Stream pipe, string pdfPath, WorkerRequest request)
+    private static async Task<long> RenderBitmapAsync(
+        Stream pipe,
+        PdfRenderSession session,
+        int pageIndex,
+        WorkerRequest request,
+        long totalBytes)
     {
-        var bitmap = PdfImageConverter.RenderPage(
-            pdfPath,
-            request.PageIndex,
-            request.Options,
-            request.Password);
+        var bitmap = session.RenderPage(pageIndex, request.Options);
+        ThrowIfResourceLimitExceeded("bitmap bytes", request.MaximumBitmapBytes, bitmap.Pixels.LongLength);
+        totalBytes = checked(totalBytes + bitmap.Pixels.LongLength);
+        ThrowIfResourceLimitExceeded("output bytes", request.MaximumOutputBytes, totalBytes);
         await WorkerProtocol.WriteFrameAsync(
                 pipe,
                 WorkerMessage.BitmapHeader,
@@ -265,15 +323,68 @@ internal static class Program
                 .ConfigureAwait(false);
             offset += count;
         }
+
+        return totalBytes;
+    }
+
+    private static long SavePageAtomically(
+        PdfRenderSession session,
+        int pageIndex,
+        string outputPath,
+        PdfImageConversionOptions options,
+        long? maximumOutputBytes,
+        long totalBytes)
+    {
+        var directory = Path.GetDirectoryName(outputPath);
+        if (string.IsNullOrEmpty(directory))
+        {
+            throw new PdfWorkerProtocolException("An output path does not have a parent directory.");
+        }
+
+        var extension = Path.GetExtension(outputPath);
+        var temporaryOutputPath = Path.Combine(
+            directory,
+            $".{Path.GetFileNameWithoutExtension(outputPath)}.{Guid.NewGuid():N}.tmp{extension}");
+        try
+        {
+            session.SavePage(pageIndex, temporaryOutputPath, options);
+            var fileBytes = new FileInfo(temporaryOutputPath).Length;
+            var nextTotal = checked(totalBytes + fileBytes);
+            ThrowIfResourceLimitExceeded("output bytes", maximumOutputBytes, nextTotal);
+            File.Move(temporaryOutputPath, outputPath, overwrite: true);
+            return nextTotal;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryOutputPath);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    private static void ThrowIfResourceLimitExceeded(string resource, long? limit, long observed)
+    {
+        if (limit.HasValue && observed > limit.Value)
+        {
+            throw new PdfRenderResourceLimitException(resource, limit.Value, observed);
+        }
     }
 
     private sealed class FramedOutputStream : Stream
     {
         private readonly Stream _pipe;
+        private readonly long? _maximumBytes;
+        private long _bytesWritten;
 
-        internal FramedOutputStream(Stream pipe)
+        internal FramedOutputStream(Stream pipe, long? maximumBytes)
         {
             _pipe = pipe;
+            _maximumBytes = maximumBytes;
         }
 
         public override bool CanRead => false;
@@ -308,6 +419,8 @@ internal static class Program
             int count,
             CancellationToken cancellationToken)
         {
+            var nextTotal = checked(_bytesWritten + count);
+            ThrowIfResourceLimitExceeded("output bytes", _maximumBytes, nextTotal);
             while (count > 0)
             {
                 var chunkLength = Math.Min(WorkerProtocol.ChunkSize, count);
@@ -322,6 +435,8 @@ internal static class Program
                 offset += chunkLength;
                 count -= chunkLength;
             }
+
+            _bytesWritten = nextTotal;
         }
 
         public override int Read(byte[] buffer, int offset, int count)

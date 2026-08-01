@@ -88,11 +88,12 @@ The logical messages are:
 | --- | --- | --- |
 | Worker to orchestrator | `Hello` | Supplies the protocol version and per-process startup token. |
 | Orchestrator to worker | `Ready` | Confirms that the handshake succeeded and requests may begin. |
-| Orchestrator to worker | `Request` | Supplies the source kind, output kind, paths where applicable, zero-based page index, password, and rendering/encoding options. |
+| Orchestrator to worker | `Request` | Supplies the source kind, output kind, one or more zero-based page indexes, paths where applicable, password, rendering/encoding options, and optional byte limits. |
 | Orchestrator to worker | `InputChunk`, `InputEnd` | Streams an in-memory or caller-stream PDF to the worker and marks the end of that input. |
 | Worker to orchestrator | `BitmapHeader`, `OutputChunk` | Returns validated bitmap metadata followed by pixels, or streams encoded image bytes to a caller output stream. |
 | Worker to orchestrator | `Complete` | Marks successful completion of the current request. |
 | Worker to orchestrator | `Error` | Returns the remote exception type and message for a request that failed without breaking the worker connection. |
+| Worker to orchestrator | `ResourceLimit` | Returns the resource name, configured limit, and observed byte count for an enforced limit. |
 | Orchestrator to worker | `Shutdown` | Requests a clean worker exit after accepted work has been handled. |
 
 These names, layouts, sizes, and sequences describe the current internal implementation. They are deliberately not
@@ -102,7 +103,13 @@ pipes or depend on protocol details. Protocol compatibility is maintained betwee
 ## Request and data flow
 
 After queue admission, a request is assigned to an available worker. That worker's persistent pipe is used exclusively
-for the request until it returns `Complete` or `Error`.
+for the request until it returns `Complete`, `Error`, or `ResourceLimit`.
+
+Single-page and multi-page requests share the protocol. A multi-page bitmap response repeats
+`BitmapHeader`/`OutputChunk` for every requested page and ends with one `Complete`; request order is result order. The
+worker opens one `PdfRenderSession` for the request, so a batch transfers and parses the document once and reuses the
+session render buffer. Pages inside a batch are sequential. Independent batches remain independent queue items and can
+run on separate workers.
 
 Input behavior depends on the source type:
 
@@ -122,7 +129,7 @@ Output behavior depends on the requested target:
 | Output | Pipe traffic and memory behavior |
 | --- | --- |
 | `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, and returns a caller-owned `PdfBitmap`. |
-| Image path | The output path crosses in the request. The worker encodes and writes the file directly, then sends `Complete`; encoded image bytes do not return through the pipe. |
+| Image path | The output path crosses in the request. The worker encodes to a uniquely named temporary file beside the destination, enforces the aggregate limit, and atomically replaces the destination; encoded bytes do not return through the pipe. A batch repeats this per mapped page. |
 | Output `Stream` | The worker encodes into a pipe-backed stream. Chunked encoded bytes return through the pipe and the orchestrator writes them to the caller-owned stream. The orchestrator never closes that output stream. |
 
 ## Scheduling and concurrency
@@ -131,7 +138,8 @@ The orchestrator uses a bounded channel for admission control. Each worker loop 
 over that worker's pipe, and only then takes another. PDFium work is therefore serialized within a worker process,
 while up to `WorkerCount` requests can perform native work concurrently across independent processes.
 
-`QueueCapacity` bounds the number of waiting requests, not their total bytes. `PdfRenderQueueFullMode.Wait` applies
+`QueueCapacity` bounds the number of waiting requests, not their total bytes. A batch counts as one request and holds
+one worker for its full duration. `PdfRenderQueueFullMode.Wait` applies
 asynchronous backpressure, while `PdfRenderQueueFullMode.Reject` rejects excess work. Failed requests are never
 automatically retried because a retry could repeat expensive work or duplicate an external write.
 
@@ -153,6 +161,8 @@ Failure handling distinguishes these cases:
 - A worker process exit, broken pipe, or premature end-of-stream becomes `PdfWorkerCrashedException` for the active
   request.
 - Malformed or unexpected communication becomes `PdfWorkerProtocolException`.
+- A configured input, bitmap, or aggregate output limit becomes `PdfRenderResourceLimitException`. A worker is
+  replaced when needed because a limit can be detected while a streamed protocol sequence is still in flight.
 - A crash, hard timeout, or protocol/transport fault terminates and replaces that worker when the orchestrator still
   needs workers. Other workers and their requests are unaffected unless worker replacement reaches a terminal failure.
 - Replacement attempts use the snapshotted `WorkerRestartDelays` sequence. If every attempt fails, the orchestrator
@@ -179,8 +189,11 @@ renderer or remote service.
 ## Worker packaging and discovery
 
 At pack time, the repository publishes one self-contained single-file worker for each supported runtime identifier.
-The NuGet package places them under `tools/<rid>/`. A build-transitive target resolves the matching executable for the
-consumer's runtime and makes its path available to the application-facing library.
+The backward-compatible `PdfiumRaster.Orchestrator` package places all of them under `tools/<rid>/`. Each
+`PdfiumRaster.Orchestrator.<rid>` slim package places only its matching worker there. Both package forms contain the
+same client assembly and build-transitive target; consumers choose exactly one. The target resolves the worker using
+the consuming project's `RuntimeIdentifier`, falling back to the SDK host RID, and copies it beside build and publish
+outputs.
 
 ## Operational diagnostics
 

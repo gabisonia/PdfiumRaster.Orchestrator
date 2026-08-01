@@ -23,10 +23,13 @@ var options = new PdfImageConversionOptions
 };
 var pageCount = PdfImageConverter.GetPageCount(pdfPath);
 var jobs = Enumerable.Range(0, pageCount)
-    .Select(pageIndex => orchestrator.SavePageAsync(
+    .Chunk(16)
+    .Select(batch => orchestrator.SavePagesAsync(
         pdfPath,
-        pageIndex,
-        Path.Combine(outputDirectory, $"page-{pageIndex + 1:D4}.png"),
+        batch.Select(pageIndex => new PdfPageFileOutput(
+                pageIndex,
+                Path.Combine(outputDirectory, $"page-{pageIndex + 1:D4}.png")))
+            .ToArray(),
         options));
 
 await Task.WhenAll(jobs);
