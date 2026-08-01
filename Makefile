@@ -7,10 +7,10 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 2.0.1
+PACKAGE_VERSION ?= 0.2.0
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
-.PHONY: help restore build test test-local test-manual publish-workers pack inspect-package smoke-package release-check clean
+.PHONY: help restore build test test-local test-manual publish-workers pack inspect-package verify-package smoke-package release-check clean
 
 help:
 	@printf '%s\n' \
@@ -23,6 +23,7 @@ help:
 		'  make publish-workers  Publish all supported self-contained workers' \
 		'  make pack             Create the PdfiumRaster.Orchestrator NuGet package' \
 		'  make inspect-package  List package contents and nuspec metadata' \
+		'  make verify-package   Assert all required package assets are present' \
 		'  make smoke-package    Install the local package in a fresh app and render a page' \
 		'  make release-check    Run tests, pack, inspect, and the package smoke test' \
 		'  make clean            Remove build and package outputs'
@@ -64,6 +65,32 @@ inspect-package: $(PACKAGE)
 	unzip -l $(PACKAGE)
 	unzip -p $(PACKAGE) PdfiumRaster.Orchestrator.nuspec
 
+verify-package: $(PACKAGE)
+	@set -euo pipefail; \
+	entries="$$(unzip -Z1 "$(PACKAGE)")"; \
+	require_entry() { \
+		if ! grep -Fqx "$$1" <<<"$$entries"; then \
+			echo "Required package entry is missing: $$1" >&2; \
+			exit 1; \
+		fi; \
+	}; \
+	require_entry 'README.md'; \
+	require_entry 'lib/netstandard2.1/PdfiumRaster.Orchestrator.dll'; \
+	require_entry 'lib/netstandard2.1/PdfiumRaster.Orchestrator.xml'; \
+	require_entry 'buildTransitive/PdfiumRaster.Orchestrator.targets'; \
+	for rid in $(WORKER_RIDS); do \
+		case "$$rid" in win-*) worker='PdfiumRaster.Orchestrator.Worker.exe' ;; \
+		*) worker='PdfiumRaster.Orchestrator.Worker' ;; \
+		esac; \
+		require_entry "tools/$$rid/$$worker"; \
+	done; \
+	nuspec="$$(unzip -p "$(PACKAGE)" PdfiumRaster.Orchestrator.nuspec)"; \
+	if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.1, ?3\.0\.0\)"' <<<"$$nuspec"; then \
+		echo 'The PdfiumRaster dependency range is missing or unexpected.' >&2; \
+		exit 1; \
+	fi; \
+	echo "Verified required assets in $(PACKAGE)."
+
 smoke-package: $(PACKAGE)
 	set -euo pipefail; \
 	repo="$$(pwd)"; \
@@ -102,8 +129,8 @@ smoke-package: $(PACKAGE)
 		'}' > Program.cs; \
 	dotnet run --configuration Release
 
-release-check: test pack inspect-package smoke-package
+release-check: test pack verify-package inspect-package smoke-package
 
 clean:
 	dotnet clean $(SOLUTION)
-	rm -rf $(ARTIFACTS_DIR) src/PdfiumRaster.Orchestrator/bin src/PdfiumRaster.Orchestrator/obj src/PdfiumRaster.Orchestrator.Worker/bin src/PdfiumRaster.Orchestrator.Worker/obj tests/PdfiumRaster.Orchestrator.Tests/bin tests/PdfiumRaster.Orchestrator.Tests/obj tests/PdfiumRaster.Orchestrator.Tests/ManualOutput
+	rm -rf $(ARTIFACTS_DIR) src/PdfiumRaster.Orchestrator/bin src/PdfiumRaster.Orchestrator/obj src/PdfiumRaster.Orchestrator.Worker/bin src/PdfiumRaster.Orchestrator.Worker/obj tests/PdfiumRaster.Orchestrator.Tests/bin tests/PdfiumRaster.Orchestrator.Tests/obj tests/PdfiumRaster.Orchestrator.Tests/ManualOutput samples/ParallelPageExport/bin samples/ParallelPageExport/obj samples/AspNetLifecycle/bin samples/AspNetLifecycle/obj

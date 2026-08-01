@@ -25,14 +25,18 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
 
 `WorkerCount` is the number of independent PDFium processes and may not exceed the logical processor count.
 `QueueCapacity` bounds accepted work waiting for a worker. `Wait` asynchronously applies backpressure; `Reject` throws
-`PdfRenderQueueFullException`. `RequestTimeout` measures active worker processing and excludes queue time. A timeout
-terminates and replaces that worker.
+`PdfRenderQueueFullException`. `RequestTimeout` starts when a request is dispatched and covers input transfer, PDFium
+rendering, image encoding, and output transfer while excluding queue time. A timeout promptly faults the request and
+terminates that worker. A custom caller stream that ignores cancellation can delay final cleanup and orchestrator
+disposal after the request task has timed out.
 
 ## Rendering
 
 Page indexes are zero-based. Path, `byte[]`, and `Stream` PDF inputs are accepted. Prefer paths for large documents.
-Byte arrays and streams must cross the named pipe and are spooled to a worker-owned temporary file. Input streams are
-read from their current position and remain owned by the caller.
+Byte arrays and streams must cross the named pipe and are spooled to a worker-owned, owner-only temporary directory.
+Input streams are read from their current position. Unless `leaveOpen: true` is passed, the orchestrator assumes
+ownership when the method is called and disposes the input after completion, cancellation, validation failure, or queue
+rejection.
 
 ```csharp
 using PdfiumRaster;
@@ -41,7 +45,10 @@ using PdfiumRaster.Orchestration;
 var bitmap = await orchestrator.RenderPageAsync(
     "input.pdf",
     pageIndex: 0,
-    PdfPageRenderOptions.Print);
+    new PdfImageConversionOptions
+    {
+        Render = new PdfPageRenderOptions { Dpi = 300 },
+    });
 
 await orchestrator.SavePageAsync(
     "input.pdf",
@@ -54,9 +61,10 @@ await orchestrator.SavePageAsync(
     });
 ```
 
-`RenderPageAsync` returns a caller-owned `PdfBitmap`. `SavePageAsync` can write to a path or caller-owned stream and
-does not close caller streams. Rendered bitmaps and encoded images can be large; memory grows with page dimensions,
-DPI, scale, and concurrent worker count.
+`RenderPageAsync` returns a caller-owned `PdfBitmap`. `SavePageAsync` can write to a path or caller-owned output stream;
+output streams are never closed by the orchestrator. Rendered bitmaps and encoded images can be large; memory grows
+with page dimensions, DPI, scale, and concurrent worker count. `QueueCapacity` bounds request count, not total retained
+PDF bytes, so queued byte-array inputs can still retain substantial managed memory.
 
 ## Lifetime and shutdown
 
@@ -106,7 +114,7 @@ workers equal `WorkerCount` multiplied by the number of application replicas.
 
 - `PdfWorkerStartupException`: a worker could not start or finish its handshake.
 - `PdfWorkerCrashedException`: a worker exited during an active request; inspect `ExitCode` and `StandardError`.
-- `PdfWorkerTimeoutException`: active processing exceeded `RequestTimeout`.
+- `PdfWorkerTimeoutException`: the dispatched request exceeded `RequestTimeout`.
 - `PdfWorkerRemoteException`: a healthy worker reported a validation, rendering, or encoding error; inspect
   `RemoteExceptionType`.
 - `PdfWorkerProtocolException`: malformed or incompatible pipe communication.

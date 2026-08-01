@@ -2,16 +2,10 @@ using Xunit.Abstractions;
 
 namespace PdfiumRaster.Orchestration.Tests;
 
-public sealed class ManualOrchestratorRenderingTests
+public sealed class ManualOrchestratorRenderingTests(ITestOutputHelper output)
 {
     private const string ManualPdfVariable = "PDFIUMRASTER_MANUAL_PDF";
     private const string WorkerPathVariable = "PDFIUMRASTER_WORKER_PATH";
-    private readonly ITestOutputHelper _output;
-
-    public ManualOrchestratorRenderingTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     [Fact]
     [Trait("Category", "Local")]
@@ -30,7 +24,7 @@ public sealed class ManualOrchestratorRenderingTests
 
         Assert.True(
             File.Exists(pdfPath),
-            $"Manual PDF not found at '{pdfPath}'. Run 'make test-orchestrator-manual PDF=/path/to/input.pdf'.");
+            $"Manual PDF not found at '{pdfPath}'. Run 'make test-manual PDF=/path/to/input.pdf'.");
 
         Directory.CreateDirectory(outputDirectory);
         var pageCount = PdfImageConverter.GetPageCount(pdfPath);
@@ -77,8 +71,8 @@ public sealed class ManualOrchestratorRenderingTests
         Assert.Equal(pageCount, images.Length);
         Assert.All(images, image => Assert.True(new FileInfo(image).Length > 8));
 
-        _output.WriteLine($"Rendered {pageCount} pages from: {pdfPath}");
-        _output.WriteLine($"Generated images: {outputDirectory}");
+        output.WriteLine($"Rendered {pageCount} pages from: {pdfPath}");
+        output.WriteLine($"Generated images: {outputDirectory}");
     }
 
     private static string GetManualPdfPath(string repositoryRoot)
@@ -91,7 +85,7 @@ public sealed class ManualOrchestratorRenderingTests
                 "tests",
                 "PdfiumRaster.Orchestrator.Tests",
                 "TestAssets",
-                "manual.pdf");
+                "Engineering Drawings.pdf");
         }
 
         return Path.IsPathRooted(configuredPath)

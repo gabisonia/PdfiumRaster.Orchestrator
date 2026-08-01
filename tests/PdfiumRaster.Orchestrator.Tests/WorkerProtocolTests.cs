@@ -78,6 +78,47 @@ public sealed class WorkerProtocolTests
             () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task FrameReaderRejectsUnknownMessage()
+    {
+        using var stream = new MemoryStream(new byte[] { 1, 0, 0, 0, byte.MaxValue });
+
+        await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public void RequestReaderRejectsTrailingDataAndUnknownKinds()
+    {
+        var request = new WorkerRequest
+        {
+            SourceKind = WorkerSourceKind.Path,
+            SourcePath = "/tmp/input.pdf",
+            OutputKind = WorkerOutputKind.Bitmap,
+            PageIndex = 0,
+        };
+        var trailing = WorkerProtocol.SerializeRequest(request).Concat(new byte[] { 1 }).ToArray();
+        Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializeRequest(trailing));
+
+        request.SourceKind = (WorkerSourceKind)byte.MaxValue;
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request)));
+    }
+
+    [Fact]
+    public async Task FrameWriterRejectsOversizedChunk()
+    {
+        using var stream = new MemoryStream();
+        var payload = new byte[WorkerProtocol.ChunkSize + 1];
+
+        await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+            () => WorkerProtocol.WriteFrameAsync(
+                stream,
+                WorkerMessage.InputChunk,
+                payload,
+                CancellationToken.None));
+    }
+
     private sealed class FragmentedReadStream : Stream
     {
         private readonly Stream _inner;

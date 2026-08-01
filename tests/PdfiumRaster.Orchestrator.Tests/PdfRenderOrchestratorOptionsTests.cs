@@ -34,4 +34,14 @@ public sealed class PdfRenderOrchestratorOptionsTests
         options.RequestTimeout = null;
         Assert.Null(options.RequestTimeout);
     }
+
+    [Fact]
+    public void QueueCapacityAndFullModeRejectInvalidValues()
+    {
+        var options = new PdfRenderOrchestratorOptions();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.QueueCapacity = 0);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => options.QueueFullMode = (PdfRenderQueueFullMode)int.MaxValue);
+    }
 }

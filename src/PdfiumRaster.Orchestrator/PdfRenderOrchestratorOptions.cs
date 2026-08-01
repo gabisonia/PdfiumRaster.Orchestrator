@@ -72,11 +72,13 @@ public sealed class PdfRenderOrchestratorOptions
     }
 
     /// <summary>
-    /// Gets or sets the optional hard limit for active worker processing, excluding time spent waiting in the queue.
+    /// Gets or sets the optional hard limit for a dispatched request, excluding time spent waiting in the queue.
     /// </summary>
     /// <remarks>
-    /// A timed-out operation terminates and replaces its worker process. The default is <see langword="null" />, which
-    /// disables hard timeouts.
+    /// The deadline covers input transfer, PDFium rendering, image encoding, and output transfer. A timed-out operation
+    /// terminates and replaces its worker process. The request task completes promptly, but disposal may still wait for
+    /// a custom caller stream that does not honor cancellation. The default is <see langword="null" />, which disables
+    /// hard timeouts.
     /// </remarks>
     public TimeSpan? RequestTimeout
     {

@@ -8,11 +8,11 @@ range is the compatibility contract and must be reviewed whenever either package
 Install the .NET 10 SDK, then run:
 
 ```bash
-make release-check PACKAGE_VERSION=2.0.1
+make release-check PACKAGE_VERSION=0.2.0
 ```
 
 This runs automated tests, publishes every supported self-contained worker, creates the NuGet and symbol packages,
-inspects package contents, installs the package in a clean app, and renders a page through a packaged worker.
+verifies package contents, installs the package in a clean app, and renders a page through a packaged worker.
 
 The package must contain:
 
@@ -22,6 +22,9 @@ The package must contain:
 - worker executables under all supported `tools/<rid>/` directories;
 - a dependency on the intended PdfiumRaster version range.
 
+CI additionally downloads the package built on Linux and runs the packaged-worker smoke test on Linux, Windows, and
+macOS. This is distinct from the normal test suite, which runs a framework-dependent worker from the build output.
+
 ## GitHub Actions publishing
 
 The `Publish NuGet` workflow is manually dispatched with a stable or beta channel, package version, and NuGet.org
@@ -29,5 +32,5 @@ profile. Configure the repository's `nuget` environment and create a NuGet trust
 repository and workflow before the first release. The workflow uses OIDC, runs the same tests and package smoke checks,
 uploads the artifacts, and pushes `.nupkg` and `.snupkg` files to NuGet.org.
 
-Use a SemVer value such as `2.0.1` for stable releases. Beta input may include a suffix such as `2.1.0-beta.1`; if the
+Use a SemVer value such as `0.2.0` for stable releases. Beta input may include a suffix such as `0.3.0-beta.1`; if the
 suffix is omitted, the workflow appends a run-number beta suffix.

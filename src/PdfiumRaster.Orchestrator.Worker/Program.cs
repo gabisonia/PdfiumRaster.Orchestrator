@@ -25,7 +25,7 @@ internal static class Program
         }
 
         var temporaryDirectory = Environment.GetEnvironmentVariable(TemporaryDirectoryEnvironmentVariable);
-        if (string.IsNullOrWhiteSpace(temporaryDirectory) || !Directory.Exists(temporaryDirectory))
+        if (string.IsNullOrWhiteSpace(temporaryDirectory))
         {
             await Console.Error.WriteLineAsync("The worker temporary directory is missing.");
             return 4;
@@ -33,6 +33,7 @@ internal static class Program
 
         try
         {
+            CreatePrivateTemporaryDirectory(temporaryDirectory);
             await using var pipe = new NamedPipeClientStream(
                 ".",
                 args[0],
@@ -81,6 +82,20 @@ internal static class Program
             Console.Error.WriteLine(exception);
             return 1;
         }
+    }
+
+    private static void CreatePrivateTemporaryDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(path);
+            return;
+        }
+
+        const UnixFileMode ownerOnly =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        var directory = Directory.CreateDirectory(path, ownerOnly);
+        directory.UnixFileMode = ownerOnly;
     }
 
     private static async Task ProcessRequestAsync(

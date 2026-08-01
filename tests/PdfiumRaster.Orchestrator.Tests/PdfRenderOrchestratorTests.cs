@@ -108,6 +108,23 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task HardTimeoutDefersOwnedStreamCleanupUntilPendingReadEnds()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        var input = new GateReadStream(bytes);
+        using var orchestrator = CreateOrchestrator(TimeSpan.FromMilliseconds(100));
+        var request = orchestrator.RenderPageAsync(input, 0);
+        await input.WaitUntilReadAsync();
+
+        await Assert.ThrowsAsync<PdfWorkerTimeoutException>(() => request);
+        Assert.True(input.CanRead);
+
+        input.Release();
+        await orchestrator.CompleteAsync();
+        Assert.False(input.CanRead);
+    }
+
+    [Fact]
     public async Task CrashedWorkerIsReplacedWithoutRetryingRequest()
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
@@ -192,6 +209,99 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
             () => orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0));
         input.Release();
         await Task.WhenAll(first, second);
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task RejectedStreamSubmissionReleasesOwnedInput()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        await using var activeInput = new GateReadStream(bytes);
+        var rejectedInput = new MemoryStream(bytes, writable: false);
+        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 1,
+            QueueFullMode = PdfRenderQueueFullMode.Reject,
+        });
+        var active = orchestrator.RenderPageAsync(activeInput, 0, leaveOpen: true);
+        await activeInput.WaitUntilReadAsync();
+        var queued = orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0);
+
+        await Assert.ThrowsAsync<PdfRenderQueueFullException>(
+            () => orchestrator.RenderPageAsync(rejectedInput, 0));
+
+        Assert.False(rejectedInput.CanRead);
+        activeInput.Release();
+        await Task.WhenAll(active, queued);
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task PreCanceledStreamSubmissionReleasesOwnedInput()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        var input = new MemoryStream(bytes, writable: false);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        using var orchestrator = CreateOrchestrator();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => orchestrator.RenderPageAsync(input, 0, cancellationToken: cancellation.Token));
+
+        Assert.False(input.CanRead);
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task ValidationFailureHonorsInputStreamOwnership()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        var ownedInput = new MemoryStream(bytes, writable: false);
+        using var callerOwnedInput = new MemoryStream(bytes, writable: false);
+        using var orchestrator = CreateOrchestrator();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => orchestrator.RenderPageAsync(ownedInput, -1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => orchestrator.RenderPageAsync(callerOwnedInput, -1, leaveOpen: true));
+
+        Assert.False(ownedInput.CanRead);
+        Assert.True(callerOwnedInput.CanRead);
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task CancelAsyncCancelsQueuedWorkAndStopsWorkers()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        await using var activeInput = new GateReadStream(bytes);
+        using var orchestrator = CreateOrchestrator();
+        var active = orchestrator.RenderPageAsync(activeInput, 0, leaveOpen: true);
+        await activeInput.WaitUntilReadAsync();
+        var queued = orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0);
+
+        var cancellation = orchestrator.CancelAsync();
+        activeInput.Release();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => active);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
+        await cancellation;
+    }
+
+    [Fact]
+    public async Task WorkerTemporaryDirectoryIsOwnerOnlyOnUnix()
+    {
+        using var orchestrator = CreateOrchestrator();
+        var temporaryDirectory = GetFirstWorkerTemporaryDirectory(orchestrator);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var mode = new DirectoryInfo(temporaryDirectory).UnixFileMode;
+            Assert.Equal(
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+                mode & (UnixFileMode)0x1FF);
+        }
+
         await orchestrator.CompleteAsync();
     }
 

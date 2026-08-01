@@ -9,6 +9,10 @@
     <Project Path="src/PdfiumRaster.Orchestrator/PdfiumRaster.Orchestrator.csproj" />
     <Project Path="src/PdfiumRaster.Orchestrator.Worker/PdfiumRaster.Orchestrator.Worker.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/AspNetLifecycle/AspNetLifecycle.csproj" />
+    <Project Path="samples/ParallelPageExport/ParallelPageExport.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PdfiumRaster.Orchestrator.Tests/PdfiumRaster.Orchestrator.Tests.csproj" />
   </Folder>

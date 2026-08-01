@@ -2,6 +2,13 @@
 
 ## Parallel page export
 
+The compilable sample is in [`ParallelPageExport`](ParallelPageExport/). Run it with an input PDF and optional output
+directory:
+
+```bash
+dotnet run --project samples/ParallelPageExport -- input.pdf ./pages
+```
+
 ```csharp
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
@@ -25,4 +32,5 @@ await orchestrator.CompleteAsync();
 ```
 
 For web applications, register `PdfRenderOrchestrator` once as a singleton and drain it from an `IHostedService` at
-host shutdown. See the [API guide](../docs/API.md#aspnet-core-application-lifetime).
+host shutdown. See the compilable [`AspNetLifecycle`](AspNetLifecycle/) sample and the
+[API guide](../docs/API.md#aspnet-core-application-lifetime).

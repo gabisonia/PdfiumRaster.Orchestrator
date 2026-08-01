@@ -1,26 +1,36 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-Security fixes are released in the latest available PdfiumRaster version. Older versions are not guaranteed to
-receive backported fixes. Because PDF parsing is performed by native PDFium code, dependency updates may be security
-relevant even when the managed API is unchanged.
+Security fixes are released in the latest available PdfiumRaster.Orchestrator version. Older versions are not
+guaranteed to receive backports. The package also executes native PDFium through its PdfiumRaster dependency, so core
+and native dependency updates can be security-relevant even when the orchestrator API is unchanged.
 
-## Reporting A Vulnerability
+## Reporting a vulnerability
 
 Do not disclose a suspected vulnerability or a proof-of-concept document in a public issue.
 
 If it is available for the repository, use
-[GitHub's private vulnerability reporting](https://github.com/gabisonia/PdfiumRaster/security/advisories/new). Otherwise,
+[GitHub's private vulnerability reporting](https://github.com/gabisonia/PdfiumRaster.Orchestrator/security/advisories/new).
+Otherwise,
 open a public issue asking the maintainer for a private contact channel, without including exploit details or a
 sensitive PDF. Include the affected version, operating system and architecture, impact, reproduction conditions, and
 whether the report may be disclosed after a fix is available.
 
 There is no guaranteed response or remediation SLA. Reports will be assessed based on reproducibility, impact, and
-whether the issue is in PdfiumRaster, its native dependencies, or the consuming application.
+whether the issue is in the orchestrator, PdfiumRaster, native dependencies, or the consuming application.
 
-## Using PdfiumRaster With Untrusted PDFs
+## Isolation boundary
 
-PdfiumRaster does not sandbox PDFium. Applications should keep the package and its dependencies current, validate
-inputs, cap page count and render dimensions, set time and memory limits outside the library, and use a separately
-supervised worker process when crash or resource isolation is required.
+Workers run under the same operating-system identity and filesystem permissions as the application. Named pipes are
+private implementation details and use an unpredictable connection token, but workers are trusted local child
+processes—not a security sandbox. A worker can read any path and write any output path accessible to the application.
+
+Process isolation contains ordinary worker crashes and enables termination at a request deadline. It does not enforce
+memory, CPU, filesystem, network, or page-complexity limits. Applications processing untrusted PDFs should keep this
+package and PdfiumRaster current, constrain accepted document and render dimensions, use path allowlists where
+appropriate, and apply operating-system or container resource and sandbox policies outside this library.
+
+Byte-array and stream inputs are spooled inside randomly named, owner-only temporary directories and removed after the
+request or worker cleanup. Applications should still treat the system temporary volume as sensitive storage and use
+encrypted storage when their threat model requires it.

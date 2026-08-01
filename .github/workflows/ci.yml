@@ -9,7 +9,7 @@ on:
   pull_request:
 
 jobs:
-  test-pack-smoke:
+  test:
     strategy:
       fail-fast: false
       matrix:
@@ -31,12 +31,28 @@ jobs:
       - name: Test
         run: dotnet test PdfiumRaster.Orchestrator.slnx --configuration Release --no-restore --filter "Category!=Local"
 
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+
       - name: Pack
-        if: runner.os == 'Linux'
         run: make pack
 
+      - name: Verify package contents
+        run: make verify-package
+
       - name: Smoke test netstandard2.1 package consumption
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
@@ -46,9 +62,41 @@ jobs:
           cd "$tmpdir/compatibility"
           dotnet new nugetconfig --force
           dotnet nuget add source "$GITHUB_WORKSPACE/artifacts" --name local --configfile nuget.config
-          dotnet add package PdfiumRaster.Orchestrator --version 2.0.1
+          dotnet add package PdfiumRaster.Orchestrator --version 0.2.0
           dotnet build --configuration Release
 
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+
+  packaged-worker-smoke:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: artifacts
+
       - name: Smoke test packaged worker
-        if: runner.os == 'Linux'
-        run: make smoke-package
+        shell: pwsh
+        run: ./eng/SmokePackage.ps1 -RepositoryRoot . -PackageVersion 0.2.0
