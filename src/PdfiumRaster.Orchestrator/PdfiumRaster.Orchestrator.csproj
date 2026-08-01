@@ -5,10 +5,11 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>PdfiumRaster.Orchestrator</AssemblyName>
     <RootNamespace>PdfiumRaster.Orchestration</RootNamespace>
     <PackageId>PdfiumRaster.Orchestrator</PackageId>
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <VersionPrefix>0.3.0</VersionPrefix>
     <Authors>PdfiumRaster contributors</Authors>
     <Title>PdfiumRaster Orchestrator</Title>
     <Description>Multi-process PDFium rendering for PdfiumRaster over local named pipes.</Description>
@@ -27,13 +28,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers"
+                      PrivateAssets="all"
+                      IncludeAssets="runtime; build; native; contentfiles; analyzers" />
     <PackageReference Include="PdfiumRaster" />
     <PackageReference Include="System.Threading.Channels" />
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="PdfiumRaster.Orchestrator.Tests" />
     <InternalsVisibleTo Include="PdfiumRaster.Orchestrator.Worker" />
+    <InternalsVisibleTo Include="PdfiumRaster.Orchestrator.FakeWorker" />
   </ItemGroup>
 
   <ItemGroup>

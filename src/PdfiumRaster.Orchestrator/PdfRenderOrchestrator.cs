@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -20,11 +21,13 @@ public sealed class PdfRenderOrchestrator : IDisposable
     private readonly Channel<OrchestrationJob> _queue;
     private readonly PdfRenderQueueFullMode _queueFullMode;
     private readonly TimeSpan? _requestTimeout;
+    private readonly TimeSpan[] _workerRestartDelays;
     private readonly WorkerSlot[] _workers;
     private readonly Task _completion;
     private readonly List<Task> _detachedOperations = new();
     private readonly object _detachedOperationsSync = new();
     private Exception? _terminalError;
+    private long _nextRequestId;
     private int _accepting = 1;
     private int _cancelRequested;
     private int _disposed;
@@ -40,6 +43,8 @@ public sealed class PdfRenderOrchestrator : IDisposable
         options ??= new PdfRenderOrchestratorOptions();
         _queueFullMode = options.QueueFullMode;
         _requestTimeout = options.RequestTimeout;
+        _workerRestartDelays = options.WorkerRestartDelays.ToArray();
+        var workerStartupTimeout = options.WorkerStartupTimeout;
         _queue = Channel.CreateBounded<OrchestrationJob>(new BoundedChannelOptions(options.QueueCapacity)
         {
             AllowSynchronousContinuations = false,
@@ -55,7 +60,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             var starts = new Task[options.WorkerCount];
             for (var index = 0; index < options.WorkerCount; index++)
             {
-                var worker = new WorkerSlot(index);
+                var worker = new WorkerSlot(index, workerStartupTimeout);
                 _workers[index] = worker;
                 starts[index] = worker.StartAsync();
             }
@@ -86,6 +91,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         }
 
         _completion = CompleteWorkersAsync(workerTasks);
+        PdfRenderOrchestratorEventSource.Log.OrchestratorStarted(options.WorkerCount, options.QueueCapacity);
     }
 
     /// <summary>
@@ -348,6 +354,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         {
             ValidatePageIndex(pageIndex);
             var job = OrchestrationJob.CreateBitmap(
+                Interlocked.Increment(ref _nextRequestId),
                 source,
                 pageIndex,
                 SnapshotOptions(options),
@@ -374,6 +381,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         {
             ValidatePageIndex(pageIndex);
             var job = OrchestrationJob.CreateSave(
+                Interlocked.Increment(ref _nextRequestId),
                 source,
                 target,
                 pageIndex,
@@ -423,6 +431,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
     {
         ThrowIfNotAccepting();
         job.CancellationToken.ThrowIfCancellationRequested();
+        PdfRenderOrchestratorEventSource.Log.RequestSubmitted(job.RequestId, job.OperationKind);
 
         if (_queueFullMode == PdfRenderQueueFullMode.Reject)
         {
@@ -458,6 +467,11 @@ public sealed class PdfRenderOrchestrator : IDisposable
                     if (terminalError is not null)
                     {
                         job.Fail(terminalError);
+                        PdfRenderOrchestratorEventSource.Log.RequestFailed(
+                            job.RequestId,
+                            worker.Index,
+                            PdfRenderOrchestratorEventSource.ExceptionType(terminalError),
+                            executionMilliseconds: 0);
                         job.Cleanup();
                         continue;
                     }
@@ -465,6 +479,10 @@ public sealed class PdfRenderOrchestrator : IDisposable
                     if (Volatile.Read(ref _cancelRequested) != 0 || job.CancellationToken.IsCancellationRequested)
                     {
                         job.Cancel();
+                        PdfRenderOrchestratorEventSource.Log.RequestCanceled(
+                            job.RequestId,
+                            worker.Index,
+                            executionMilliseconds: 0);
                         job.Cleanup();
                         continue;
                     }
@@ -488,6 +506,12 @@ public sealed class PdfRenderOrchestrator : IDisposable
     {
         var cleanupDeferred = false;
         var replacementAttempted = false;
+        var terminalEventWritten = false;
+        var executionStarted = Stopwatch.GetTimestamp();
+        PdfRenderOrchestratorEventSource.Log.RequestStarted(
+            job.RequestId,
+            worker.Index,
+            PdfRenderOrchestratorEventSource.ElapsedMilliseconds(job.SubmittedTimestamp));
         using var executionCancellation = new CancellationTokenSource();
         try
         {
@@ -500,13 +524,20 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 {
                     executionCancellation.Cancel();
                     worker.Kill();
-                    job.Fail(new PdfWorkerTimeoutException(_requestTimeout.Value));
+                    var timeoutException = new PdfWorkerTimeoutException(_requestTimeout.Value);
+                    job.Fail(timeoutException);
+                    PdfRenderOrchestratorEventSource.Log.RequestFailed(
+                        job.RequestId,
+                        worker.Index,
+                        PdfRenderOrchestratorEventSource.ExceptionType(timeoutException),
+                        PdfRenderOrchestratorEventSource.ElapsedMilliseconds(executionStarted));
+                    terminalEventWritten = true;
                     cleanupDeferred = true;
                     TrackDetachedOperation(ObserveFailureAndCleanupAsync(execution, job));
                     replacementAttempted = true;
                     if (ShouldReplaceWorker())
                     {
-                        await RestartWorkerAsync(worker).ConfigureAwait(false);
+                        await RestartWorkerAsync(worker, timeoutException).ConfigureAwait(false);
                     }
 
                     return;
@@ -519,19 +550,47 @@ public sealed class PdfRenderOrchestrator : IDisposable
             if (Volatile.Read(ref _cancelRequested) != 0 || job.CancellationToken.IsCancellationRequested)
             {
                 job.Cancel();
+                PdfRenderOrchestratorEventSource.Log.RequestCanceled(
+                    job.RequestId,
+                    worker.Index,
+                    PdfRenderOrchestratorEventSource.ElapsedMilliseconds(executionStarted));
+                terminalEventWritten = true;
             }
             else
             {
                 job.Complete(bitmap);
+                PdfRenderOrchestratorEventSource.Log.RequestCompleted(
+                    job.RequestId,
+                    worker.Index,
+                    PdfRenderOrchestratorEventSource.ElapsedMilliseconds(executionStarted));
+                terminalEventWritten = true;
             }
         }
         catch (PdfWorkerRemoteException exception)
         {
             job.Fail(exception);
+            if (!terminalEventWritten)
+            {
+                PdfRenderOrchestratorEventSource.Log.RequestFailed(
+                    job.RequestId,
+                    worker.Index,
+                    PdfRenderOrchestratorEventSource.ExceptionType(exception),
+                    PdfRenderOrchestratorEventSource.ElapsedMilliseconds(executionStarted));
+                terminalEventWritten = true;
+            }
         }
         catch (Exception exception)
         {
             job.Fail(exception);
+            if (!terminalEventWritten)
+            {
+                PdfRenderOrchestratorEventSource.Log.RequestFailed(
+                    job.RequestId,
+                    worker.Index,
+                    PdfRenderOrchestratorEventSource.ExceptionType(exception),
+                    PdfRenderOrchestratorEventSource.ElapsedMilliseconds(executionStarted));
+                terminalEventWritten = true;
+            }
             if (replacementAttempted)
             {
                 throw;
@@ -539,7 +598,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
             if (ShouldReplaceWorker())
             {
-                await RestartWorkerAsync(worker).ConfigureAwait(false);
+                await RestartWorkerAsync(worker, exception).ConfigureAwait(false);
             }
         }
         finally
@@ -561,14 +620,19 @@ public sealed class PdfRenderOrchestrator : IDisposable
         return Volatile.Read(ref _accepting) != 0 || _queue.Reader.TryPeek(out _);
     }
 
-    private async Task RestartWorkerAsync(WorkerSlot worker)
+    private async Task RestartWorkerAsync(WorkerSlot worker, Exception reason)
     {
         worker.Kill();
         worker.DisposeConnection();
         Exception? lastError = null;
-        var delays = new[] { 250, 1000, 4000 };
-        foreach (var delay in delays)
+        for (var attempt = 0; attempt < _workerRestartDelays.Length; attempt++)
         {
+            var delay = _workerRestartDelays[attempt];
+            PdfRenderOrchestratorEventSource.Log.WorkerRestarting(
+                worker.Index,
+                attempt + 1,
+                checked((long)delay.TotalMilliseconds),
+                PdfRenderOrchestratorEventSource.ExceptionType(reason));
             try
             {
                 await Task.Delay(delay).ConfigureAwait(false);
@@ -584,7 +648,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         }
 
         throw new PdfWorkerStartupException(
-            $"PDFium worker {worker.Index} could not be replaced after three attempts.",
+            $"PDFium worker {worker.Index} could not be replaced after {_workerRestartDelays.Length} attempts.",
             lastError ?? new InvalidOperationException("The replacement worker did not start."));
     }
 
@@ -638,7 +702,12 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
     private void FaultOrchestrator(Exception exception)
     {
-        Interlocked.CompareExchange(ref _terminalError, exception, null);
+        if (Interlocked.CompareExchange(ref _terminalError, exception, null) is null)
+        {
+            PdfRenderOrchestratorEventSource.Log.OrchestratorFaulted(
+                PdfRenderOrchestratorEventSource.ExceptionType(exception));
+        }
+
         Interlocked.Exchange(ref _accepting, 0);
         _queue.Writer.TryComplete(exception);
     }
@@ -652,6 +721,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
         if (Interlocked.Exchange(ref _accepting, 0) != 0)
         {
+            PdfRenderOrchestratorEventSource.Log.OrchestratorStopping(cancel);
             _queue.Writer.TryComplete();
         }
     }
@@ -946,6 +1016,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
         private int _cleaned;
 
         private OrchestrationJob(
+            long requestId,
             InputSource source,
             OutputTarget target,
             int pageIndex,
@@ -954,6 +1025,8 @@ public sealed class PdfRenderOrchestrator : IDisposable
             CancellationToken cancellationToken,
             bool bitmap)
         {
+            RequestId = requestId;
+            SubmittedTimestamp = Stopwatch.GetTimestamp();
             Source = source;
             Target = target;
             PageIndex = pageIndex;
@@ -973,6 +1046,9 @@ public sealed class PdfRenderOrchestrator : IDisposable
         }
 
         internal InputSource Source { get; }
+        internal long RequestId { get; }
+        internal long SubmittedTimestamp { get; }
+        internal int OperationKind => _bitmapCompletion is null ? 2 : 1;
         internal OutputTarget Target { get; }
         internal int PageIndex { get; }
         internal PdfImageConversionOptions Options { get; }
@@ -982,16 +1058,26 @@ public sealed class PdfRenderOrchestrator : IDisposable
         internal Task SaveTask => _saveCompletion!.Task;
 
         internal static OrchestrationJob CreateBitmap(
+            long requestId,
             InputSource source,
             int pageIndex,
             PdfImageConversionOptions options,
             string? password,
             CancellationToken cancellationToken)
         {
-            return new OrchestrationJob(source, new BitmapOutputTarget(), pageIndex, options, password, cancellationToken, true);
+            return new OrchestrationJob(
+                requestId,
+                source,
+                new BitmapOutputTarget(),
+                pageIndex,
+                options,
+                password,
+                cancellationToken,
+                true);
         }
 
         internal static OrchestrationJob CreateSave(
+            long requestId,
             InputSource source,
             OutputTarget target,
             int pageIndex,
@@ -999,7 +1085,15 @@ public sealed class PdfRenderOrchestrator : IDisposable
             string? password,
             CancellationToken cancellationToken)
         {
-            return new OrchestrationJob(source, target, pageIndex, options, password, cancellationToken, false);
+            return new OrchestrationJob(
+                requestId,
+                source,
+                target,
+                pageIndex,
+                options,
+                password,
+                cancellationToken,
+                false);
         }
 
         internal WorkerRequest CreateRequest()
@@ -1064,18 +1158,20 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
     private sealed class WorkerSlot : IDisposable
     {
+        private readonly TimeSpan _startupTimeout;
         private WorkerConnection? _connection;
 
-        internal WorkerSlot(int index)
+        internal WorkerSlot(int index, TimeSpan startupTimeout)
         {
             Index = index;
+            _startupTimeout = startupTimeout;
         }
 
         internal int Index { get; }
 
         internal async Task StartAsync()
         {
-            _connection = await WorkerConnection.StartAsync(Index).ConfigureAwait(false);
+            _connection = await WorkerConnection.StartAsync(Index, _startupTimeout).ConfigureAwait(false);
         }
 
         internal Task<PdfBitmap?> ExecuteAsync(OrchestrationJob job, CancellationToken cancellationToken)
@@ -1121,9 +1217,9 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
     private sealed class WorkerConnection : IDisposable
     {
-        private const int StartupTimeoutMilliseconds = 15000;
         private const int StandardErrorLimit = 8192;
         private readonly NamedPipeServerStream _pipe;
+        private readonly int _index;
         private readonly Process _process;
         private readonly string _temporaryDirectory;
         private readonly StringBuilder _standardError = new();
@@ -1132,8 +1228,9 @@ public sealed class PdfRenderOrchestrator : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _disposed;
 
-        private WorkerConnection(NamedPipeServerStream pipe, Process process, string temporaryDirectory)
+        private WorkerConnection(int index, NamedPipeServerStream pipe, Process process, string temporaryDirectory)
         {
+            _index = index;
             _pipe = pipe;
             _process = process;
             _temporaryDirectory = temporaryDirectory;
@@ -1147,7 +1244,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             }
         }
 
-        internal static async Task<WorkerConnection> StartAsync(int index)
+        internal static async Task<WorkerConnection> StartAsync(int index, TimeSpan startupTimeout)
         {
             var pipeName = $"pdr-{index:x}-{Guid.NewGuid():N}".Substring(0, 24);
             var token = CreateToken();
@@ -1159,7 +1256,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 PipeDirection.InOut,
                 1,
                 PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous);
+                WorkerProtocol.LocalPipeOptions);
             Process? process = null;
             WorkerConnection? connection = null;
             try
@@ -1169,12 +1266,13 @@ public sealed class PdfRenderOrchestrator : IDisposable
                     executable,
                     pipeName,
                     token,
-                    temporaryDirectory);
+                    temporaryDirectory,
+                    startupTimeout);
                 process = Process.Start(startInfo) ??
                     throw new PdfWorkerStartupException("The PDFium worker process did not start.");
-                connection = new WorkerConnection(pipe, process, temporaryDirectory);
+                connection = new WorkerConnection(index, pipe, process, temporaryDirectory);
 
-                using var timeout = new CancellationTokenSource(StartupTimeoutMilliseconds);
+                using var timeout = new CancellationTokenSource(startupTimeout);
                 var connectionTask = pipe.WaitForConnectionAsync(timeout.Token);
                 if (await Task.WhenAny(connectionTask, connection._processExited.Task).ConfigureAwait(false) !=
                     connectionTask)
@@ -1187,29 +1285,18 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
                 await connectionTask.ConfigureAwait(false);
                 var hello = await WorkerProtocol.ReadFrameAsync(pipe, timeout.Token).ConfigureAwait(false);
-                if (hello.Message != WorkerMessage.Hello)
-                {
-                    throw new PdfWorkerProtocolException("The worker did not begin with a protocol handshake.");
-                }
-
-                var (version, actualToken) = WorkerProtocol.DeserializeHello(hello.Payload);
-                if (version != WorkerProtocol.Version)
-                {
-                    throw new PdfWorkerProtocolException(
-                        $"Worker protocol version {version} is incompatible with client version {WorkerProtocol.Version}.");
-                }
-
-                if (!FixedTimeEquals(token, actualToken))
-                {
-                    throw new PdfWorkerProtocolException("The worker authentication token did not match.");
-                }
+                WorkerProtocol.ValidateWorkerHello(hello, token);
 
                 await WorkerProtocol.WriteEmptyFrameAsync(pipe, WorkerMessage.Ready, timeout.Token)
                     .ConfigureAwait(false);
+                PdfRenderOrchestratorEventSource.Log.WorkerStarted(index, process.Id);
                 return connection;
             }
             catch (Exception exception)
             {
+                PdfRenderOrchestratorEventSource.Log.WorkerStartFailed(
+                    index,
+                    PdfRenderOrchestratorEventSource.ExceptionType(exception));
                 connection?.Kill();
                 connection?.Dispose();
                 if (connection is null)
@@ -1401,6 +1488,7 @@ public sealed class PdfRenderOrchestrator : IDisposable
             _process.ErrorDataReceived -= OnErrorDataReceived;
             _process.Exited -= OnProcessExited;
             _pipe.Dispose();
+            PdfRenderOrchestratorEventSource.Log.WorkerStopped(_index, _process.Id);
             _process.Dispose();
             TryDeleteDirectory(_temporaryDirectory);
         }
@@ -1499,24 +1587,6 @@ public sealed class PdfRenderOrchestrator : IDisposable
             return Convert.ToBase64String(bytes);
         }
 
-        private static bool FixedTimeEquals(string expected, string actual)
-        {
-            var expectedBytes = Encoding.UTF8.GetBytes(expected);
-            var actualBytes = Encoding.UTF8.GetBytes(actual);
-            if (expectedBytes.Length != actualBytes.Length)
-            {
-                return false;
-            }
-
-            var difference = 0;
-            for (var index = 0; index < expectedBytes.Length; index++)
-            {
-                difference |= expectedBytes[index] ^ actualBytes[index];
-            }
-
-            return difference == 0;
-        }
-
         private static void ValidateBitmapHeader(int width, int height, int stride, int byteCount)
         {
             if (width <= 0 || height <= 0 || stride < checked(width * 4) ||
@@ -1588,7 +1658,8 @@ public sealed class PdfRenderOrchestrator : IDisposable
             string workerPath,
             string pipeName,
             string token,
-            string temporaryDirectory)
+            string temporaryDirectory,
+            TimeSpan startupTimeout)
         {
             var isDll = string.Equals(Path.GetExtension(workerPath), ".dll", StringComparison.OrdinalIgnoreCase);
             if (!isDll && !RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -1610,6 +1681,8 @@ public sealed class PdfRenderOrchestrator : IDisposable
             };
             info.EnvironmentVariables["PDFIUMRASTER_PIPE_TOKEN"] = token;
             info.EnvironmentVariables["PDFIUMRASTER_TEMP_DIRECTORY"] = temporaryDirectory;
+            info.EnvironmentVariables["PDFIUMRASTER_STARTUP_TIMEOUT_TICKS"] =
+                startupTimeout.Ticks.ToString(CultureInfo.InvariantCulture);
             return info;
         }
 

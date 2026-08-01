@@ -1,37 +1,64 @@
+using System.Buffers.Binary;
+using System.IO.Pipes;
+
 namespace PdfiumRaster.Orchestration.Tests;
 
 public sealed class WorkerProtocolTests
 {
     [Fact]
+    public void LocalPipeOptionsRestrictAsyncConnectionsToCurrentUser()
+    {
+        Assert.Equal(
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+            WorkerProtocol.LocalPipeOptions);
+    }
+
+    [Fact]
+    public async Task VersionOneHelloFrameMatchesGoldenVector()
+    {
+        Assert.Equal(1, WorkerProtocol.Version);
+        var expected = Convert.FromHexString("0B000000010100000005746F6B656E");
+        using var stream = new MemoryStream();
+
+        await WorkerProtocol.WriteFrameAsync(
+            stream,
+            WorkerMessage.Hello,
+            WorkerProtocol.SerializeHello("token"),
+            CancellationToken.None);
+
+        Assert.Equal(expected, stream.ToArray());
+    }
+
+    [Fact]
+    public void VersionOneRequestPayloadMatchesGoldenVector()
+    {
+        var expected = Convert.FromHexString(
+            "01010E2F746D702F696E7075742E70646602010F2F746D702F6F75747075742E706E67" +
+            "0300000001067365637265740000000000006240000000000000F83F0100000001000000" +
+            "0120030000000001000000302010FF0001000000510000000102000000010000005A");
+
+        var actual = WorkerProtocol.SerializeRequest(CreateGoldenRequest());
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void VersionOneResponsePayloadsMatchGoldenVectors()
+    {
+        var expectedBitmapHeader = Convert.FromHexString("02000000030000000800000018000000");
+        var expectedError = Convert.FromHexString(
+            "2053797374656D2E496E76616C69644F7065726174696F6E457863657074696F6E03626164");
+
+        Assert.Equal(
+            expectedBitmapHeader,
+            WorkerProtocol.SerializeBitmapHeader(width: 2, height: 3, stride: 8, byteCount: 24));
+        Assert.Equal(expectedError, WorkerProtocol.SerializeError(new InvalidOperationException("bad")));
+    }
+
+    [Fact]
     public void RequestRoundTripsAllConversionOptions()
     {
-        var request = new WorkerRequest
-        {
-            SourceKind = WorkerSourceKind.Path,
-            SourcePath = "/tmp/input.pdf",
-            OutputKind = WorkerOutputKind.Path,
-            OutputPath = "/tmp/output.png",
-            PageIndex = 3,
-            Password = "secret",
-            Options = new PdfImageConversionOptions
-            {
-                Render = new PdfPageRenderOptions
-                {
-                    Dpi = 144,
-                    Scale = 1.5,
-                    Rotation = PdfPageRotation.Rotate90,
-                    Flags = PdfRenderFlags.Annot,
-                    Width = 800,
-                    AntiAliasing = PdfAntiAliasing.Text,
-                    BackgroundColor = 0xFF102030,
-                    FillBackground = false,
-                },
-                Format = PdfImageOutputFormat.Png,
-                Encoding = new PdfImageEncodingOptions { Quality = 81, PngCompressionLevel = 2 },
-                ColorMode = PdfImageColorMode.Grayscale,
-                BlackAndWhiteThreshold = 90,
-            },
-        };
+        var request = CreateGoldenRequest();
 
         var actual = WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request));
 
@@ -46,6 +73,69 @@ public sealed class WorkerProtocolTests
         Assert.Equal(PdfImageOutputFormat.Png, actual.Options.Format);
         Assert.Equal(2, actual.Options.Encoding.PngCompressionLevel);
         Assert.Equal(PdfImageColorMode.Grayscale, actual.Options.ColorMode);
+    }
+
+    [Fact]
+    public void WorkerHandshakeAcceptsExpectedVersionAndToken()
+    {
+        var frame = new WorkerFrame(WorkerMessage.Hello, WorkerProtocol.SerializeHello("expected"));
+
+        WorkerProtocol.ValidateWorkerHello(frame, "expected");
+    }
+
+    [Fact]
+    public void WorkerHandshakeRejectsUnexpectedFirstMessage()
+    {
+        var frame = new WorkerFrame(WorkerMessage.Ready, Array.Empty<byte>());
+
+        var exception = Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateWorkerHello(frame, "expected"));
+
+        Assert.Contains("did not begin with a protocol handshake", exception.Message);
+    }
+
+    [Fact]
+    public void WorkerHandshakeRejectsIncompatibleVersion()
+    {
+        var payload = WorkerProtocol.SerializeHello("expected");
+        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(0, sizeof(int)), WorkerProtocol.Version + 1);
+        var frame = new WorkerFrame(WorkerMessage.Hello, payload);
+
+        var exception = Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateWorkerHello(frame, "expected"));
+
+        Assert.Contains("incompatible", exception.Message);
+    }
+
+    [Fact]
+    public void WorkerHandshakeRejectsWrongToken()
+    {
+        var frame = new WorkerFrame(WorkerMessage.Hello, WorkerProtocol.SerializeHello("unexpected"));
+
+        var exception = Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateWorkerHello(frame, "expected"));
+
+        Assert.Contains("token did not match", exception.Message);
+    }
+
+    [Fact]
+    public void WorkerHandshakeRejectsMalformedHelloPayload()
+    {
+        var frame = new WorkerFrame(WorkerMessage.Hello, Array.Empty<byte>());
+
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateWorkerHello(frame, "expected"));
+    }
+
+    [Fact]
+    public void ReadyHandshakeRequiresAnEmptyReadyFrame()
+    {
+        WorkerProtocol.ValidateReady(new WorkerFrame(WorkerMessage.Ready, Array.Empty<byte>()));
+
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateReady(new WorkerFrame(WorkerMessage.Hello, Array.Empty<byte>())));
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ValidateReady(new WorkerFrame(WorkerMessage.Ready, new byte[] { 1 })));
     }
 
     [Fact]
@@ -88,6 +178,20 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public async Task FrameReaderRejectsTruncatedHandshake()
+    {
+        using var stream = new MemoryStream(new byte[]
+        {
+            3, 0, 0, 0,
+            (byte)WorkerMessage.Hello,
+            1,
+        });
+
+        await Assert.ThrowsAsync<EndOfStreamException>(
+            () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
     public void RequestReaderRejectsTrailingDataAndUnknownKinds()
     {
         var request = new WorkerRequest
@@ -117,6 +221,37 @@ public sealed class WorkerProtocolTests
                 WorkerMessage.InputChunk,
                 payload,
                 CancellationToken.None));
+    }
+
+    private static WorkerRequest CreateGoldenRequest()
+    {
+        return new WorkerRequest
+        {
+            SourceKind = WorkerSourceKind.Path,
+            SourcePath = "/tmp/input.pdf",
+            OutputKind = WorkerOutputKind.Path,
+            OutputPath = "/tmp/output.png",
+            PageIndex = 3,
+            Password = "secret",
+            Options = new PdfImageConversionOptions
+            {
+                Render = new PdfPageRenderOptions
+                {
+                    Dpi = 144,
+                    Scale = 1.5,
+                    Rotation = PdfPageRotation.Rotate90,
+                    Flags = PdfRenderFlags.Annot,
+                    Width = 800,
+                    AntiAliasing = PdfAntiAliasing.Text,
+                    BackgroundColor = 0xFF102030,
+                    FillBackground = false,
+                },
+                Format = PdfImageOutputFormat.Png,
+                Encoding = new PdfImageEncodingOptions { Quality = 81, PngCompressionLevel = 2 },
+                ColorMode = PdfImageColorMode.Grayscale,
+                BlackAndWhiteThreshold = 90,
+            },
+        };
     }
 
     private sealed class FragmentedReadStream : Stream

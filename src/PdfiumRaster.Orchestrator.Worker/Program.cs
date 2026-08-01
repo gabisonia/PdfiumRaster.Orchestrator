@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Pipes;
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
@@ -8,6 +9,8 @@ internal static class Program
 {
     private const string TokenEnvironmentVariable = "PDFIUMRASTER_PIPE_TOKEN";
     private const string TemporaryDirectoryEnvironmentVariable = "PDFIUMRASTER_TEMP_DIRECTORY";
+    private const string StartupTimeoutTicksEnvironmentVariable = "PDFIUMRASTER_STARTUP_TIMEOUT_TICKS";
+    private static readonly TimeSpan DefaultStartupTimeout = TimeSpan.FromSeconds(15);
 
     private static async Task<int> Main(string[] args)
     {
@@ -31,6 +34,24 @@ internal static class Program
             return 4;
         }
 
+        var startupTimeout = DefaultStartupTimeout;
+        var startupTimeoutTicks = Environment.GetEnvironmentVariable(StartupTimeoutTicksEnvironmentVariable);
+        if (!string.IsNullOrEmpty(startupTimeoutTicks))
+        {
+            if (!long.TryParse(
+                    startupTimeoutTicks,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var ticks) ||
+                ticks <= 0)
+            {
+                await Console.Error.WriteLineAsync("The worker startup timeout is invalid.");
+                return 5;
+            }
+
+            startupTimeout = TimeSpan.FromTicks(ticks);
+        }
+
         try
         {
             CreatePrivateTemporaryDirectory(temporaryDirectory);
@@ -38,21 +59,18 @@ internal static class Program
                 ".",
                 args[0],
                 PipeDirection.InOut,
-                PipeOptions.Asynchronous);
-            using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            await pipe.ConnectAsync(startupTimeout.Token).ConfigureAwait(false);
+                WorkerProtocol.LocalPipeOptions);
+            using var startupCancellation = new CancellationTokenSource(startupTimeout);
+            await pipe.ConnectAsync(startupCancellation.Token).ConfigureAwait(false);
             await WorkerProtocol.WriteFrameAsync(
                     pipe,
                     WorkerMessage.Hello,
                     WorkerProtocol.SerializeHello(token),
-                    startupTimeout.Token)
+                    startupCancellation.Token)
                 .ConfigureAwait(false);
 
-            var ready = await WorkerProtocol.ReadFrameAsync(pipe, startupTimeout.Token).ConfigureAwait(false);
-            if (ready.Message != WorkerMessage.Ready)
-            {
-                throw new PdfWorkerProtocolException("The orchestrator client rejected the worker handshake.");
-            }
+            var ready = await WorkerProtocol.ReadFrameAsync(pipe, startupCancellation.Token).ConfigureAwait(false);
+            WorkerProtocol.ValidateReady(ready);
 
             using var pdfium = PdfiumLibrary.Initialize();
             while (true)

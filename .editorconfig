@@ -1,0 +1,7 @@
+root = true
+
+[*.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+# The existing overload families intentionally use optional parameters for source/target variants.
+dotnet_diagnostic.RS0026.severity = none

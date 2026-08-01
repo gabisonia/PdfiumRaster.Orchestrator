@@ -20,6 +20,8 @@
     <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator\PdfiumRaster.Orchestrator.csproj" />
     <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator.Worker\PdfiumRaster.Orchestrator.Worker.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PdfiumRaster.Orchestrator.FakeWorker\PdfiumRaster.Orchestrator.FakeWorker.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +33,10 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>PdfiumRasterWorkerPath</_Parameter1>
       <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../src/PdfiumRaster.Orchestrator.Worker/bin/$(Configuration)/net10.0/PdfiumRaster.Orchestrator.Worker.dll'))</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>PdfiumRasterFakeWorkerPath</_Parameter1>
+      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../PdfiumRaster.Orchestrator.FakeWorker/bin/$(Configuration)/net10.0/PdfiumRaster.Orchestrator.FakeWorker.dll'))</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

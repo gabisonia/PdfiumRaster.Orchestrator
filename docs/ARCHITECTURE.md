@@ -40,10 +40,12 @@ library, but its role in the named-pipe connection is the **server**. The child 
 | `PdfRenderOrchestrator` | `NamedPipeServerStream` | Creates and owns the pipe, starts the worker, accepts its connection, sends requests, receives results, and disposes or replaces the connection. |
 | `PdfiumRaster.Orchestrator.Worker` | `NamedPipeClientStream` | Connects to the local pipe created for it, receives requests, invokes PdfiumRaster, returns results, and exits when the pipe closes or a shutdown message arrives. |
 
-Both ends open the pipe with `PipeDirection.InOut` and `PipeOptions.Asynchronous`, so the same connection carries data
-in both directions and pipe I/O can be cancelled or awaited without blocking a dedicated thread. The server uses byte
-transmission mode and permits one server instance for that pipe name. A pipe belongs to one worker only; connections
-are not shared between workers and are not opened per render request.
+Both ends open the pipe with `PipeDirection.InOut` and combine the `PipeOptions.Asynchronous` and
+`PipeOptions.CurrentUserOnly` flags. The same connection therefore carries data in both directions, pipe I/O can be
+cancelled or awaited without blocking a dedicated thread, and the runtime rejects a pipe endpoint owned by a
+different operating-system user. The server uses byte transmission mode and permits one server instance for that pipe
+name. A pipe belongs to one worker only; connections are not shared between workers and are not opened per render
+request.
 
 ## Connection startup and handshake
 
@@ -63,8 +65,8 @@ The orchestrator establishes each worker connection in this order:
 7. The orchestrator replies with `Ready`. Only then does the worker initialize PdfiumRaster/PDFium and enter its
    request loop.
 
-Connection and handshake must complete within 15 seconds after the process is launched. A premature worker exit,
-timeout, wrong first message, incompatible protocol version, or token mismatch fails startup with
+Connection and handshake must complete within `WorkerStartupTimeout`, which defaults to 15 seconds. A premature worker
+exit, timeout, wrong first message, incompatible protocol version, or token mismatch fails startup with
 `PdfWorkerStartupException`, and the incomplete process and pipe are cleaned up.
 
 ## Private framed protocol
@@ -153,7 +155,8 @@ Failure handling distinguishes these cases:
 - Malformed or unexpected communication becomes `PdfWorkerProtocolException`.
 - A crash, hard timeout, or protocol/transport fault terminates and replaces that worker when the orchestrator still
   needs workers. Other workers and their requests are unaffected unless worker replacement reaches a terminal failure.
-- If replacement repeatedly fails, the orchestrator enters a terminal faulted state and stops accepting work.
+- Replacement attempts use the snapshotted `WorkerRestartDelays` sequence. If every attempt fails, the orchestrator
+  enters a terminal faulted state and stops accepting work.
 
 `CompleteAsync()` stops admission, drains accepted work, sends `Shutdown`, and waits for worker exits. `CancelAsync()`
 and `Dispose()` cancel queued work, wait for active uninterruptible cleanup, and stop the workers. If a worker does not
@@ -161,9 +164,11 @@ exit after a graceful shutdown request, the orchestrator kills it.
 
 ## Trust and security boundary
 
-The transport is intended only for the local worker processes launched by the orchestrator. Pipe names are unique per
-worker, the worker connects to the local machine, and the startup token prevents a connection from being accepted as
-the expected child without knowing that token. The pipe protocol is not exposed publicly.
+The transport is intended only for the local worker processes launched by the orchestrator. Both pipe endpoints
+require the current operating-system user, pipe names are unique per worker, the worker connects to the local machine,
+and the startup token prevents a connection from being accepted as the expected child without knowing that token. The
+pipe protocol is not exposed publicly. The user restriction and token are complementary: the former rejects a
+different account, while the latter identifies the specific child launched for a worker slot.
 
 This design is **not** a security sandbox and the pipe is not an encrypted application protocol. Workers inherit the
 application's operating-system identity, environment context, working directory, and filesystem permissions. A worker
@@ -176,3 +181,11 @@ renderer or remote service.
 At pack time, the repository publishes one self-contained single-file worker for each supported runtime identifier.
 The NuGet package places them under `tools/<rid>/`. A build-transitive target resolves the matching executable for the
 consumer's runtime and makes its path available to the application-facing library.
+
+## Operational diagnostics
+
+An internal EventSource named `PdfiumRaster-Orchestrator` emits orchestrator, request, and worker lifecycle events.
+Request events include process-local correlation IDs and timing but exclude paths, passwords, pipe names, tokens,
+standard error, and document bytes. Worker events include the worker index and process ID; failure events include only
+the managed exception type. This keeps the transport private while allowing queue delay, execution time, crashes,
+timeouts, and replacement activity to be observed with standard .NET diagnostics tooling.

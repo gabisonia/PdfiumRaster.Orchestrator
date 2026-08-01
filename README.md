@@ -6,7 +6,8 @@ Companion repository: [PdfiumRaster](https://github.com/gabisonia/PdfiumRaster),
 
 `PdfiumRaster.Orchestrator` adds true parallel PDFium rendering to
 [`PdfiumRaster`](https://www.nuget.org/packages/PdfiumRaster) by running a fixed number of isolated local worker
-processes. Each worker has its own PDFium runtime and communicates with the application over a private named pipe.
+processes. Each worker has its own PDFium runtime and communicates with the application over a private named pipe
+restricted to the application's operating-system user.
 The orchestrator owns a bidirectional `NamedPipeServerStream`, and its child worker connects with a
 `NamedPipeClientStream`. There is one persistent pipe per worker process; the pipe carries startup handshakes,
 requests, in-memory inputs, and results. The roles, framing, data flow, failure handling, and trust boundary are
@@ -112,3 +113,5 @@ macOS x64/ARM64. Modern .NET does not provide a self-contained worker runtime fo
 `linux-musl-x86` are not supported.
 
 See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), and [releasing](docs/RELEASING.md) for more detail.
+For worker startup, pipe, crash, timeout, filesystem, and diagnostic guidance, see
+[troubleshooting](docs/TROUBLESHOOTING.md).

@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.IO.Pipes;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace PdfiumRaster.Orchestration;
@@ -58,6 +60,7 @@ internal static class WorkerProtocol
     internal const int Version = 1;
     internal const int ChunkSize = 64 * 1024;
     internal const int MaximumControlPayload = 1024 * 1024;
+    internal const PipeOptions LocalPipeOptions = PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
     private const int MaximumChunkPayload = ChunkSize;
 
     internal static async Task WriteFrameAsync(
@@ -142,6 +145,36 @@ internal static class WorkerProtocol
     internal static (int Version, string Token) DeserializeHello(byte[] payload)
     {
         return Deserialize(payload, reader => (reader.ReadInt32(), reader.ReadString()));
+    }
+
+    internal static void ValidateWorkerHello(WorkerFrame frame, string expectedToken)
+    {
+        if (frame.Message != WorkerMessage.Hello)
+        {
+            throw new PdfWorkerProtocolException("The worker did not begin with a protocol handshake.");
+        }
+
+        var (version, actualToken) = DeserializeHello(frame.Payload);
+        if (version != Version)
+        {
+            throw new PdfWorkerProtocolException(
+                $"Worker protocol version {version} is incompatible with client version {Version}.");
+        }
+
+        var expectedBytes = Encoding.UTF8.GetBytes(expectedToken);
+        var actualBytes = Encoding.UTF8.GetBytes(actualToken);
+        if (!CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes))
+        {
+            throw new PdfWorkerProtocolException("The worker authentication token did not match.");
+        }
+    }
+
+    internal static void ValidateReady(WorkerFrame frame)
+    {
+        if (frame.Message != WorkerMessage.Ready || frame.Payload.Length != 0)
+        {
+            throw new PdfWorkerProtocolException("The orchestrator rejected the worker handshake.");
+        }
     }
 
     internal static byte[] SerializeRequest(WorkerRequest request)

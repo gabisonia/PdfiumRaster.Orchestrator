@@ -20,6 +20,7 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
     QueueCapacity = 100,
     QueueFullMode = PdfRenderQueueFullMode.Wait,
     RequestTimeout = TimeSpan.FromSeconds(30),
+    WorkerStartupTimeout = TimeSpan.FromSeconds(15),
 });
 ```
 
@@ -29,6 +30,12 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
 rendering, image encoding, and output transfer while excluding queue time. A timeout promptly faults the request and
 terminates that worker. A custom caller stream that ignores cancellation can delay final cleanup and orchestrator
 disposal after the request task has timed out.
+
+`WorkerStartupTimeout` bounds process connection and handshake time and defaults to 15 seconds.
+`WorkerRestartDelays` defaults to 250 milliseconds, one second, and four seconds; each entry is the delay before one
+replacement attempt. Both settings are validated and snapshotted during construction. See the
+[troubleshooting guide](TROUBLESHOOTING.md#startup-timeout-and-replacement-policy) before increasing them in response
+to persistent startup failures.
 
 ## Rendering
 
@@ -122,6 +129,12 @@ workers equal `WorkerCount` multiplied by the number of application replicas.
 
 After a crash, timeout, or protocol failure, the orchestrator replaces the affected worker. The failed request is
 never retried automatically because rendering to a path or stream may have observable partial output.
+
+## Diagnostics
+
+The internal EventSource provider `PdfiumRaster-Orchestrator` reports request timing, worker process IDs, failures,
+timeouts, and replacement attempts without emitting paths, passwords, tokens, pipe names, or payload data. See
+[diagnostic events](TROUBLESHOOTING.md#diagnostic-events) for collection instructions and event semantics.
 
 ## Supported worker platforms
 

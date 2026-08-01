@@ -22,9 +22,11 @@ whether the issue is in the orchestrator, PdfiumRaster, native dependencies, or 
 
 ## Isolation boundary
 
-Workers run under the same operating-system identity and filesystem permissions as the application. Named pipes are
-private implementation details and use an unpredictable connection token, but workers are trusted local child
-processes—not a security sandbox. A worker can read any path and write any output path accessible to the application.
+Workers run under the same operating-system identity and filesystem permissions as the application. Named-pipe
+endpoints are restricted to that operating-system user and use an unpredictable per-worker connection token. These
+controls prevent a different user or an unrelated connection without the token from completing the handshake, but
+workers remain trusted local child processes—not a security sandbox. A worker can read any path and write any output
+path accessible to the application.
 
 Process isolation contains ordinary worker crashes and enables termination at a request deadline. It does not enforce
 memory, CPU, filesystem, network, or page-complexity limits. Applications processing untrusted PDFs should keep this

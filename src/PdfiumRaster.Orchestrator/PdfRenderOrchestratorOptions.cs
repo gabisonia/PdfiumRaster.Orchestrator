@@ -5,10 +5,18 @@ namespace PdfiumRaster.Orchestration;
 /// </summary>
 public sealed class PdfRenderOrchestratorOptions
 {
+    private static readonly TimeSpan MaximumTimerTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
     private int _workerCount = Math.Max(1, Math.Min(Environment.ProcessorCount, 4));
     private int _queueCapacity = 42;
     private PdfRenderQueueFullMode _queueFullMode;
     private TimeSpan? _requestTimeout;
+    private TimeSpan _workerStartupTimeout = TimeSpan.FromSeconds(15);
+    private TimeSpan[] _workerRestartDelays =
+    {
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(4),
+    };
 
     /// <summary>
     /// Gets or sets the number of worker processes and therefore the maximum number of simultaneous PDFium operations.
@@ -92,6 +100,63 @@ public sealed class PdfRenderOrchestratorOptions
             }
 
             _requestTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the maximum time allowed for a worker process to connect and complete its startup handshake.
+    /// </summary>
+    /// <remarks>The default is 15 seconds. The value is snapshotted when the orchestrator is constructed.</remarks>
+    public TimeSpan WorkerStartupTimeout
+    {
+        get => _workerStartupTimeout;
+        set
+        {
+            if (value <= TimeSpan.Zero || value > MaximumTimerTimeout)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    $"Worker startup timeout must be greater than zero and no more than {MaximumTimerTimeout}.");
+            }
+
+            _workerStartupTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the delays before successive attempts to replace a failed worker.
+    /// </summary>
+    /// <remarks>
+    /// The defaults are 250 milliseconds, one second, and four seconds. At least one non-negative delay is required.
+    /// The values are copied when assigned and snapshotted again when the orchestrator is constructed.
+    /// </remarks>
+    public IReadOnlyList<TimeSpan> WorkerRestartDelays
+    {
+        get => Array.AsReadOnly(_workerRestartDelays);
+        set
+        {
+            if (value is null)
+            {
+                throw new ArgumentNullException(nameof(value));
+            }
+
+            if (value.Count == 0)
+            {
+                throw new ArgumentException("At least one worker restart delay is required.", nameof(value));
+            }
+
+            var snapshot = new TimeSpan[value.Count];
+            for (var index = 0; index < value.Count; index++)
+            {
+                if (value[index] < TimeSpan.Zero || value[index] > MaximumTimerTimeout)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(value), value[index],
+                        $"Worker restart delays must be from zero through {MaximumTimerTimeout}.");
+                }
+
+                snapshot[index] = value[index];
+            }
+
+            _workerRestartDelays = snapshot;
         }
     }
 }

@@ -1,0 +1,5 @@
+#nullable enable
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerRestartDelays.get -> System.Collections.Generic.IReadOnlyList<System.TimeSpan>!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerRestartDelays.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerStartupTimeout.get -> System.TimeSpan
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerStartupTimeout.set -> void

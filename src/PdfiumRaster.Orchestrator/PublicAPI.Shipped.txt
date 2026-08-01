@@ -1,0 +1,37 @@
+#nullable enable
+PdfiumRaster.Orchestration.PdfRenderOrchestrator
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.CancelAsync() -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.CompleteAsync() -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.Dispose() -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.PdfRenderOrchestrator(PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions? options = null) -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.RenderPageAsync(byte[]! pdfBytes, int pageIndex, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.PdfBitmap!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.RenderPageAsync(System.IO.Stream! pdfStream, int pageIndex, PdfiumRaster.PdfImageConversionOptions? options = null, bool leaveOpen = false, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.PdfBitmap!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.RenderPageAsync(string! pdfPath, int pageIndex, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.PdfBitmap!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(byte[]! pdfBytes, int pageIndex, System.IO.Stream! imageStream, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(byte[]! pdfBytes, int pageIndex, string! imagePath, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(System.IO.Stream! pdfStream, int pageIndex, System.IO.Stream! imageStream, PdfiumRaster.PdfImageConversionOptions? options = null, bool leaveOpen = false, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(System.IO.Stream! pdfStream, int pageIndex, string! imagePath, PdfiumRaster.PdfImageConversionOptions? options = null, bool leaveOpen = false, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(string! pdfPath, int pageIndex, System.IO.Stream! imageStream, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.SavePageAsync(string! pdfPath, int pageIndex, string! imagePath, PdfiumRaster.PdfImageConversionOptions? options = null, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.PdfRenderOrchestratorOptions() -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.QueueCapacity.get -> int
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.QueueCapacity.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.QueueFullMode.get -> PdfiumRaster.PdfRenderQueueFullMode
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.QueueFullMode.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.RequestTimeout.get -> System.TimeSpan?
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.RequestTimeout.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerCount.get -> int
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerCount.set -> void
+PdfiumRaster.Orchestration.PdfWorkerCrashedException
+PdfiumRaster.Orchestration.PdfWorkerCrashedException.ExitCode.get -> int?
+PdfiumRaster.Orchestration.PdfWorkerCrashedException.StandardError.get -> string!
+PdfiumRaster.Orchestration.PdfWorkerException
+PdfiumRaster.Orchestration.PdfWorkerException.PdfWorkerException(string! message) -> void
+PdfiumRaster.Orchestration.PdfWorkerException.PdfWorkerException(string! message, System.Exception! innerException) -> void
+PdfiumRaster.Orchestration.PdfWorkerProtocolException
+PdfiumRaster.Orchestration.PdfWorkerRemoteException
+PdfiumRaster.Orchestration.PdfWorkerRemoteException.RemoteExceptionType.get -> string!
+PdfiumRaster.Orchestration.PdfWorkerStartupException
+PdfiumRaster.Orchestration.PdfWorkerTimeoutException
+PdfiumRaster.Orchestration.PdfWorkerTimeoutException.Timeout.get -> System.TimeSpan
