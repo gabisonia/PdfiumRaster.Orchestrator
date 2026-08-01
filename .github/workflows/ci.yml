@@ -46,6 +46,9 @@ jobs:
       - name: Restore
         run: dotnet restore PdfiumRaster.Orchestrator.slnx
 
+      - name: Enforce coverage
+        run: make coverage
+
       - name: Pack
         run: make pack
 

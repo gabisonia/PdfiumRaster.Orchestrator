@@ -17,8 +17,11 @@ Install the .NET 10 SDK, then run:
 make release-check PACKAGE_VERSION=0.3.0
 ```
 
-This runs automated tests, publishes every supported self-contained worker, creates the NuGet and symbol packages,
-verifies package contents, installs the package in a clean app, and renders a page through a packaged worker.
+This runs automated tests with the enforced line and branch coverage thresholds, publishes every supported
+self-contained worker, creates the NuGet and symbol packages, verifies package contents, installs the package in a
+clean app, and renders a page through a packaged worker.
+
+The enforced scenarios and platform-specific coverage strategy are listed in [the testing guide](TESTING.md).
 
 The package must contain:
 

@@ -7,11 +7,20 @@ namespace PdfiumRaster.Orchestrator.FakeWorker;
 internal static class Program
 {
     private const string ModeEnvironmentVariable = "PDFIUMRASTER_FAKE_WORKER_MODE";
+    private const string StateFileEnvironmentVariable = "PDFIUMRASTER_FAKE_WORKER_STATE_FILE";
     private const string TokenEnvironmentVariable = "PDFIUMRASTER_PIPE_TOKEN";
 
     private static async Task<int> Main(string[] args)
     {
         var mode = Environment.GetEnvironmentVariable(ModeEnvironmentVariable) ?? "healthy";
+        var stateFile = Environment.GetEnvironmentVariable(StateFileEnvironmentVariable);
+        if (mode == "disconnect-then-replacements-fail" &&
+            !string.IsNullOrWhiteSpace(stateFile) &&
+            File.Exists(stateFile))
+        {
+            return 27;
+        }
+
         if (mode == "exit-before-connect")
         {
             return 20;
@@ -86,6 +95,17 @@ internal static class Program
                     }).ConfigureAwait(false);
                     await pipe.FlushAsync().ConfigureAwait(false);
                     return 26;
+                case "stderr-disconnect":
+                    Console.Error.WriteLine(new string('x', 9000) + "stderr-tail");
+                    await Console.Error.FlushAsync().ConfigureAwait(false);
+                    return 28;
+                case "disconnect-then-replacements-fail":
+                    if (!string.IsNullOrWhiteSpace(stateFile))
+                    {
+                        await File.WriteAllTextAsync(stateFile, "failed").ConfigureAwait(false);
+                    }
+
+                    return 29;
                 case "invalid-bitmap-header":
                     await WorkerProtocol.WriteFrameAsync(
                             pipe,
@@ -105,6 +125,109 @@ internal static class Program
                             pipe,
                             WorkerMessage.OutputChunk,
                             new byte[] { 1, 2, 3, 4, 5 },
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "missing-bitmap-header":
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "incomplete-bitmap":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.BitmapHeader,
+                            WorkerProtocol.SerializeBitmapHeader(width: 2, height: 1, stride: 8, byteCount: 8),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.OutputChunk,
+                            new byte[] { 1, 2, 3, 4 },
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "duplicate-bitmap-header":
+                    var header = WorkerProtocol.SerializeBitmapHeader(width: 1, height: 1, stride: 4, byteCount: 4);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.BitmapHeader,
+                            header,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.BitmapHeader,
+                            header,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "unexpected-request-message":
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.InputEnd,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "bitmap-header-for-stream":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.BitmapHeader,
+                            WorkerProtocol.SerializeBitmapHeader(width: 1, height: 1, stride: 4, byteCount: 4),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "output-for-path":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.OutputChunk,
+                            new byte[] { 1 },
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "valid-bitmap":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.BitmapHeader,
+                            WorkerProtocol.SerializeBitmapHeader(width: 1, height: 1, stride: 4, byteCount: 4),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.OutputChunk,
+                            new byte[] { 1, 2, 3, 4 },
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "valid-stream":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.OutputChunk,
+                            new byte[] { 1, 2, 3, 4 },
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "valid-path":
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
                             CancellationToken.None)
                         .ConfigureAwait(false);
                     break;

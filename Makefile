@@ -10,7 +10,7 @@ WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-m
 PACKAGE_VERSION ?= 0.3.0
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
-.PHONY: help restore build test test-local test-manual publish-workers pack inspect-package verify-package smoke-package release-check clean
+.PHONY: help restore build test coverage test-local test-manual publish-workers pack inspect-package verify-package smoke-package release-check clean
 
 help:
 	@printf '%s\n' \
@@ -18,6 +18,7 @@ help:
 		'  make restore          Restore NuGet packages' \
 		'  make build            Build the solution in Release mode' \
 		'  make test             Run automated tests, excluding local-only tests' \
+		'  make coverage         Run tests with enforced line and branch coverage thresholds' \
 		'  make test-local       Run all local-only tests' \
 		'  make test-manual PDF=<path> Render every PDF page for visual inspection' \
 		'  make publish-workers  Publish all supported self-contained workers' \
@@ -36,6 +37,13 @@ build:
 
 test:
 	dotnet test $(SOLUTION) -c $(CONFIGURATION) --filter "Category!=Local"
+
+coverage:
+	rm -rf $(ARTIFACTS_DIR)/coverage
+	dotnet test $(TEST_PROJECT) -c $(CONFIGURATION) --filter "Category!=Local" \
+		--collect "XPlat Code Coverage" \
+		--results-directory $(ARTIFACTS_DIR)/coverage
+	bash eng/AssertCoverage.sh $(ARTIFACTS_DIR)/coverage 90 80
 
 test-local:
 	dotnet test $(SOLUTION) -c $(CONFIGURATION) --filter "Category=Local"
@@ -129,7 +137,7 @@ smoke-package: $(PACKAGE)
 		'}' > Program.cs; \
 	dotnet run --configuration Release
 
-release-check: test pack verify-package inspect-package smoke-package
+release-check: coverage pack verify-package inspect-package smoke-package
 
 clean:
 	dotnet clean $(SOLUTION)

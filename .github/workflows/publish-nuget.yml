@@ -71,8 +71,8 @@ jobs:
       - name: Restore
         run: dotnet restore PdfiumRaster.Orchestrator.slnx
 
-      - name: Test
-        run: dotnet test PdfiumRaster.Orchestrator.slnx --configuration Release --no-restore --filter "Category!=Local"
+      - name: Test and enforce coverage
+        run: make coverage
 
       - name: Pack
         run: make pack PACKAGE_VERSION=${{ steps.version.outputs.package_version }}

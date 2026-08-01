@@ -168,6 +168,30 @@ public sealed class WorkerProtocolTests
             () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task FrameReaderRejectsNonPositiveLength(int length)
+    {
+        using var stream = new MemoryStream(BitConverter.GetBytes(length));
+
+        await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FrameReaderAppliesTheSmallerChunkPayloadLimit()
+    {
+        var frameLength = WorkerProtocol.ChunkSize + 2;
+        using var stream = new MemoryStream();
+        await stream.WriteAsync(BitConverter.GetBytes(frameLength));
+        stream.WriteByte((byte)WorkerMessage.OutputChunk);
+        stream.Position = 0;
+
+        await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+            () => WorkerProtocol.ReadFrameAsync(stream, CancellationToken.None));
+    }
+
     [Fact]
     public async Task FrameReaderRejectsUnknownMessage()
     {
@@ -221,6 +245,57 @@ public sealed class WorkerProtocolTests
                 WorkerMessage.InputChunk,
                 payload,
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FrameWriterRejectsOversizedControlPayload()
+    {
+        using var stream = new MemoryStream();
+
+        await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+            () => WorkerProtocol.WriteFrameAsync(
+                stream,
+                WorkerMessage.Request,
+                new byte[WorkerProtocol.MaximumControlPayload + 1],
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public void BitmapAndErrorPayloadsRoundTripAndRejectMalformedData()
+    {
+        Assert.Equal(
+            (Width: 2, Height: 3, Stride: 8, ByteCount: 24),
+            WorkerProtocol.DeserializeBitmapHeader(
+                WorkerProtocol.SerializeBitmapHeader(width: 2, height: 3, stride: 8, byteCount: 24)));
+
+        var error = WorkerProtocol.DeserializeError(
+            WorkerProtocol.SerializeError(new InvalidOperationException("bad")));
+        Assert.Equal(typeof(InvalidOperationException).FullName, error.Type);
+        Assert.Equal("bad", error.Message);
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.DeserializeBitmapHeader(Array.Empty<byte>()));
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.DeserializeError(new byte[] { 1 }));
+    }
+
+    [Fact]
+    public void RequestRoundTripPreservesNullPathsPasswordAndDefaultOptionObjects()
+    {
+        var request = new WorkerRequest
+        {
+            SourceKind = WorkerSourceKind.Content,
+            OutputKind = WorkerOutputKind.Stream,
+            PageIndex = 0,
+            Options = new PdfImageConversionOptions { Render = null!, Encoding = null! },
+        };
+
+        var actual = WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request));
+
+        Assert.Null(actual.SourcePath);
+        Assert.Null(actual.OutputPath);
+        Assert.Null(actual.Password);
+        Assert.NotNull(actual.Options.Render);
+        Assert.NotNull(actual.Options.Encoding);
     }
 
     private static WorkerRequest CreateGoldenRequest()

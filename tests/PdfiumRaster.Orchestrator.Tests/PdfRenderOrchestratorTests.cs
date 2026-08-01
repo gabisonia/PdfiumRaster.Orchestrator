@@ -100,7 +100,8 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var request = orchestrator.RenderPageAsync(input, 0, leaveOpen: true);
         await input.WaitUntilReadAsync();
 
-        await Assert.ThrowsAsync<PdfWorkerTimeoutException>(() => request);
+        var exception = await Assert.ThrowsAsync<PdfWorkerTimeoutException>(() => request);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), exception.Timeout);
         input.Release();
         await WaitForDirectoryDeletionAsync(workerTemporaryDirectory);
         Assert.False(Directory.Exists(workerTemporaryDirectory));
