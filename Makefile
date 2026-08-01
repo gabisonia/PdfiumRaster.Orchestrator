@@ -7,7 +7,7 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 0.3.0
+PACKAGE_VERSION ?= 0.4.0
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
 .PHONY: help restore build test coverage test-local test-manual publish-workers pack inspect-package verify-package smoke-package release-check clean
@@ -83,6 +83,7 @@ verify-package: $(PACKAGE)
 		fi; \
 	}; \
 	require_entry 'README.md'; \
+	require_entry 'CHANGELOG.md'; \
 	require_entry 'lib/netstandard2.1/PdfiumRaster.Orchestrator.dll'; \
 	require_entry 'lib/netstandard2.1/PdfiumRaster.Orchestrator.xml'; \
 	require_entry 'buildTransitive/PdfiumRaster.Orchestrator.targets'; \

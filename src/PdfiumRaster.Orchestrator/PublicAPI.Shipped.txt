@@ -23,6 +23,10 @@ PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.RequestTimeout.get -> Sy
 PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.RequestTimeout.set -> void
 PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerCount.get -> int
 PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerCount.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerRestartDelays.get -> System.Collections.Generic.IReadOnlyList<System.TimeSpan>!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerRestartDelays.set -> void
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerStartupTimeout.get -> System.TimeSpan
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.WorkerStartupTimeout.set -> void
 PdfiumRaster.Orchestration.PdfWorkerCrashedException
 PdfiumRaster.Orchestration.PdfWorkerCrashedException.ExitCode.get -> int?
 PdfiumRaster.Orchestration.PdfWorkerCrashedException.StandardError.get -> string!

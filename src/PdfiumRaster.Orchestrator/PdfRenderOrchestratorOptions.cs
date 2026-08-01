@@ -86,17 +86,18 @@ public sealed class PdfRenderOrchestratorOptions
     /// The deadline covers input transfer, PDFium rendering, image encoding, and output transfer. A timed-out operation
     /// terminates and replaces its worker process. The request task completes promptly, but disposal may still wait for
     /// a custom caller stream that does not honor cancellation. The default is <see langword="null" />, which disables
-    /// hard timeouts.
+    /// hard timeouts. A configured value must be greater than zero and no more than approximately 49.7 days, which is
+    /// the maximum portable timer interval supported by the target frameworks.
     /// </remarks>
     public TimeSpan? RequestTimeout
     {
         get => _requestTimeout;
         set
         {
-            if (value.HasValue && value.Value <= TimeSpan.Zero)
+            if (value.HasValue && (value.Value <= TimeSpan.Zero || value.Value > MaximumTimerTimeout))
             {
                 throw new ArgumentOutOfRangeException(nameof(value), value,
-                    "Request timeout must be greater than zero or null.");
+                    $"Request timeout must be greater than zero, no more than {MaximumTimerTimeout}, or null.");
             }
 
             _requestTimeout = value;

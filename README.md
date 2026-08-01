@@ -118,6 +118,7 @@ The package supports self-contained workers on Windows x86/x64/ARM64, Linux ARM3
 macOS x64/ARM64. Modern .NET does not provide a self-contained worker runtime for 32-bit Linux, so `linux-x86` and
 `linux-musl-x86` are not supported.
 
-See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), and [releasing](docs/RELEASING.md) for more detail.
+See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), [release history](CHANGELOG.md), and
+[releasing](docs/RELEASING.md) for more detail.
 For worker startup, pipe, crash, timeout, filesystem, and diagnostic guidance, see
 [troubleshooting](docs/TROUBLESHOOTING.md).

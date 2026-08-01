@@ -9,7 +9,7 @@
     <AssemblyName>PdfiumRaster.Orchestrator</AssemblyName>
     <RootNamespace>PdfiumRaster.Orchestration</RootNamespace>
     <PackageId>PdfiumRaster.Orchestrator</PackageId>
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <VersionPrefix>0.4.0</VersionPrefix>
     <Authors>PdfiumRaster contributors</Authors>
     <Title>PdfiumRaster Orchestrator</Title>
     <Description>Multi-process PDFium rendering for PdfiumRaster over local named pipes.</Description>
@@ -17,6 +17,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageTags>pdf;pdfium;raster;image;process;orchestration</PackageTags>
+    <PackageReleaseNotes>See CHANGELOG.md or https://github.com/gabisonia/PdfiumRaster.Orchestrator/blob/master/CHANGELOG.md.</PackageReleaseNotes>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/gabisonia/PdfiumRaster.Orchestrator</RepositoryUrl>
     <PackageProjectUrl>https://github.com/gabisonia/PdfiumRaster.Orchestrator</PackageProjectUrl>
@@ -48,6 +49,7 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="" Link="README.md" />
+    <None Include="..\..\CHANGELOG.md" Pack="true" PackagePath="" Link="CHANGELOG.md" />
     <None Include="buildTransitive\PdfiumRaster.Orchestrator.targets"
           Pack="true"
           PackagePath="buildTransitive\PdfiumRaster.Orchestrator.targets" />

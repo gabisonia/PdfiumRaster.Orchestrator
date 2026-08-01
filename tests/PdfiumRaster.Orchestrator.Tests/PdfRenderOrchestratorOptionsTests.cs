@@ -28,13 +28,19 @@ public sealed class PdfRenderOrchestratorOptionsTests
     }
 
     [Fact]
-    public void RequestTimeoutMustBePositiveOrNull()
+    public void RequestTimeoutMustBePortablePositiveOrNull()
     {
         var options = new PdfRenderOrchestratorOptions();
+        var maximum = TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => options.RequestTimeout = TimeSpan.Zero);
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.RequestTimeout = TimeSpan.FromTicks(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.RequestTimeout = maximum.Add(TimeSpan.FromTicks(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.RequestTimeout = TimeSpan.MaxValue);
         options.RequestTimeout = TimeSpan.FromSeconds(1);
         Assert.Equal(TimeSpan.FromSeconds(1), options.RequestTimeout);
+        options.RequestTimeout = maximum;
+        Assert.Equal(maximum, options.RequestTimeout);
         options.RequestTimeout = null;
         Assert.Null(options.RequestTimeout);
     }

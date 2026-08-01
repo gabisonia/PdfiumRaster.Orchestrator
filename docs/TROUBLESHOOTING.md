@@ -57,6 +57,10 @@ var options = new PdfRenderOrchestratorOptions
 both settings during construction. If every replacement attempt fails, the orchestrator enters a terminal faulted
 state and stops accepting submissions.
 
+`RequestTimeout`, `WorkerStartupTimeout`, and each restart delay use portable framework timers. Non-null timeout values
+cannot exceed approximately 49.7 days. Values beyond that limit are rejected during option assignment instead of
+failing later when a request or worker operation creates its timer.
+
 Increasing the startup timeout does not fix a missing executable, unsupported platform, denied pipe creation, or
 worker crash. Diagnose those conditions instead of masking them with a long timeout.
 
@@ -108,6 +112,28 @@ The library emits an internal `EventSource` provider named `PdfiumRaster-Orchest
 - submission-to-execution and execution durations;
 - worker process IDs, exits, replacement attempts, and replacement delays;
 - exception type names for failures.
+
+The provider has no custom keywords. Enable it at `Verbose` to receive every event, including request submission.
+Event IDs and payloads are:
+
+| ID | Event | Level | Payload | Meaning |
+| ---: | --- | --- | --- | --- |
+| 1 | `OrchestratorStarted` | Informational | `workerCount` (`Int32`), `queueCapacity` (`Int32`) | A new orchestrator started its fixed worker set. |
+| 2 | `RequestSubmitted` | Verbose | `requestId` (`Int64`), `operationKind` (`Int32`) | A request entered submission; operation `1` renders a bitmap and `2` saves an image. |
+| 3 | `RequestStarted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `submissionDelayMilliseconds` (`Double`) | A zero-based worker slot received the request. Delay is elapsed milliseconds since submission. |
+| 4 | `RequestCompleted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `executionMilliseconds` (`Double`) | The request completed successfully. Duration starts at worker assignment. |
+| 5 | `RequestFailed` | Warning | `requestId` (`Int64`), `workerIndex` (`Int32`), `exceptionType` (`String`), `executionMilliseconds` (`Double`) | The request failed. The type is the fully qualified managed exception name when available. |
+| 6 | `RequestCanceled` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `executionMilliseconds` (`Double`) | The request observed caller or orchestrator cancellation. |
+| 7 | `WorkerStarted` | Informational | `workerIndex` (`Int32`), `processId` (`Int32`) | A worker connected, passed the handshake, and became available. |
+| 8 | `WorkerRestarting` | Warning | `workerIndex` (`Int32`), `attempt` (`Int32`), `delayMilliseconds` (`Int64`), `reasonType` (`String`) | A one-based replacement attempt is waiting for its configured delay. |
+| 9 | `WorkerStopped` | Informational | `workerIndex` (`Int32`), `processId` (`Int32`) | A worker connection and process were released. |
+| 10 | `WorkerStartFailed` | Error | `workerIndex` (`Int32`), `exceptionType` (`String`) | Initial worker startup or a replacement attempt failed. |
+| 11 | `OrchestratorFaulted` | Error | `exceptionType` (`String`) | A terminal error stopped admission and faulted the orchestrator. |
+| 12 | `OrchestratorStopping` | Informational | `cancel` (`Boolean`) | Shutdown began; `true` selects cancellation and `false` selects graceful draining. |
+
+`requestId` values are unique only within one orchestrator process. Correlate request events by that value and worker
+events by the zero-based `workerIndex`; process IDs can change after replacement. Durations use the monotonic runtime
+timestamp and are expressed as elapsed milliseconds, not wall-clock timestamps.
 
 Events never contain PDF or image paths, passwords, pipe names, handshake tokens, standard-error text, or document
 payloads. Request IDs are process-local correlation values and operation kinds are numeric (`1` for bitmap render and

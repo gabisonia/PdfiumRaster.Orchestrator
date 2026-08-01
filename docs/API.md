@@ -29,7 +29,8 @@ using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOpti
 `PdfRenderQueueFullException`. `RequestTimeout` starts when a request is dispatched and covers input transfer, PDFium
 rendering, image encoding, and output transfer while excluding queue time. A timeout promptly faults the request and
 terminates that worker. A custom caller stream that ignores cancellation can delay final cleanup and orchestrator
-disposal after the request task has timed out.
+disposal after the request task has timed out. The value must be greater than zero and no more than approximately 49.7
+days; `null` disables the request deadline.
 
 `WorkerStartupTimeout` bounds process connection and handshake time and defaults to 15 seconds.
 `WorkerRestartDelays` defaults to 250 milliseconds, one second, and four seconds; each entry is the delay before one
