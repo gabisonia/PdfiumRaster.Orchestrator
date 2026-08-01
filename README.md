@@ -2,7 +2,13 @@
 
 [![NuGet](https://img.shields.io/nuget/v/PdfiumRaster.Orchestrator.svg)](https://www.nuget.org/packages/PdfiumRaster.Orchestrator)
 
-Companion repository: [PdfiumRaster](https://github.com/gabisonia/PdfiumRaster), the underlying PDF-to-image library.
+> [!IMPORTANT]
+> `PdfiumRaster.Orchestrator` is a multi-process orchestration layer built on top of
+> [PdfiumRaster](https://github.com/gabisonia/PdfiumRaster), not a separate PDF rendering engine. PdfiumRaster performs
+> the PDF-to-image conversion; this package solves process-level parallelism, bounded scheduling, crash isolation,
+> hard timeouts, and worker replacement by coordinating isolated PdfiumRaster workers over private local named pipes.
+> It intentionally does not provide PDF editing, text extraction, form filling, signing, or a viewer UI, and its
+> workers are not a security sandbox.
 
 `PdfiumRaster.Orchestrator` adds true parallel PDFium rendering to
 [`PdfiumRaster`](https://www.nuget.org/packages/PdfiumRaster) by running a fixed number of isolated local worker
