@@ -39,14 +39,29 @@ that many native operations concurrently. The boundary also allows a crashed or 
 without terminating the application. The tradeoffs are one native runtime and memory footprint per worker plus
 named-pipe transfer overhead for in-memory inputs and outputs.
 
+## Installation
+
+> [!IMPORTANT]
+> Choose exactly one orchestrator package. Install `PdfiumRaster.Orchestrator` for the all-in-one package, or install
+> one `PdfiumRaster.Orchestrator.<rid>` package for a specific platform. Do not combine the all-in-one package with a
+> platform-specific package, and do not install multiple platform-specific packages.
+
+For the simplest setup, install the all-in-one package:
+
 ```bash
 dotnet add package PdfiumRaster.Orchestrator
 ```
 
-The package above contains every supported worker and is the simplest choice for applications deployed to multiple
-platforms. To reduce restore and deployment size when the target runtime is known, install exactly one slim package,
-for example `PdfiumRaster.Orchestrator.linux-x64`, and build or publish for that RID. See
-[worker package choices](docs/API.md#worker-package-choices).
+It contains every supported worker and automatically selects the matching worker when the application is built or
+published. To reduce restore and deployment size when the target runtime is known, install one platform-specific
+package and publish for the matching RID, for example:
+
+```bash
+dotnet add package PdfiumRaster.Orchestrator.linux-x64
+dotnet publish -r linux-x64
+```
+
+See [worker package choices](docs/API.md#worker-package-choices) for every supported platform.
 
 ```csharp
 using PdfiumRaster;
