@@ -9,7 +9,33 @@ dotnet add package PdfiumRaster.Orchestrator
 
 ## Creating an orchestrator
 
-Create one long-lived `PdfRenderOrchestrator` for each application process:
+Create one long-lived `PdfRenderOrchestrator` for each application process. The parameterless constructor uses all
+default options:
+
+```csharp
+using PdfiumRaster.Orchestration;
+
+using var orchestrator = new PdfRenderOrchestrator();
+```
+
+### Default options
+
+| Option | Default |
+| --- | --- |
+| `WorkerCount` | The smaller of `4` and `Environment.ProcessorCount`, with a minimum of `1` |
+| `QueueCapacity` | `42` waiting requests |
+| `QueueFullMode` | `PdfRenderQueueFullMode.Wait` |
+| `RequestTimeout` | `null` (hard request timeouts disabled) |
+| `WorkerStartupTimeout` | 15 seconds |
+| `WorkerRestartDelays` | 250 milliseconds, 1 second, then 4 seconds |
+| `MaximumBatchPages` | `256` pages |
+| `MaximumInputBytes` | `null` (unlimited) |
+| `MaximumBitmapBytes` | `null` (unlimited) |
+| `MaximumOutputBytes` | `null` (unlimited) |
+| `TemporaryDirectory` | `null` (use the operating-system temporary directory) |
+
+Pass `PdfRenderOrchestratorOptions` to override only the values the application needs. For example, this is a custom
+configuration rather than a representation of the defaults:
 
 ```csharp
 using PdfiumRaster.Orchestration;

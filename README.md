@@ -63,6 +63,15 @@ dotnet publish -r linux-x64
 
 See [worker package choices](docs/API.md#worker-package-choices) for every supported platform.
 
+> [!NOTE]
+> `new PdfRenderOrchestrator()` uses bounded defaults without requiring an options object: up to four workers, a
+> 42-request waiting queue, wait-mode backpressure, a 256-page batch limit, a 15-second worker startup timeout, and
+> three worker-replacement attempts. Hard request timeouts and byte limits are disabled by default, and worker
+> temporary files use the operating-system temporary directory. See the complete
+> [default options table](docs/API.md#default-options).
+
+The following example customizes the timeout and resource limits:
+
 ```csharp
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
