@@ -14,6 +14,8 @@ All notable changes to PdfiumRaster.Orchestrator are documented here. The projec
 
 - Emphasize choosing exactly one all-runtime or platform-specific package and document every orchestrator option
   default and the standard .NET/OpenTelemetry observability setup.
+- Add an ASP.NET Core sample that demonstrates host logging, correlated OpenTelemetry tracing, operational metrics,
+  and graceful orchestrator shutdown.
 
 ## 0.5.0 - 2026-08-02
 

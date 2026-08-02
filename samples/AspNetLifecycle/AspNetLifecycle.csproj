@@ -7,6 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Exporter.Console" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator\PdfiumRaster.Orchestrator.csproj" />
   </ItemGroup>
 
