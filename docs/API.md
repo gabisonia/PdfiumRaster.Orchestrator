@@ -33,6 +33,7 @@ using var orchestrator = new PdfRenderOrchestrator();
 | `MaximumBitmapBytes` | `null` (unlimited) |
 | `MaximumOutputBytes` | `null` (unlimited) |
 | `TemporaryDirectory` | `null` (use the operating-system temporary directory) |
+| `LoggerFactory` | `NullLoggerFactory.Instance` (structured logging disabled) |
 
 Pass `PdfRenderOrchestratorOptions` to override only the values the application needs. For example, this is a custom
 configuration rather than a representation of the defaults:
@@ -154,12 +155,13 @@ blocks until shutdown completes. Do not create an orchestrator per request.
 Register one singleton per host process:
 
 ```csharp
-builder.Services.AddSingleton<PdfRenderOrchestrator>(_ =>
+builder.Services.AddSingleton<PdfRenderOrchestrator>(services =>
     new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
     {
         WorkerCount = Math.Min(Environment.ProcessorCount, 4),
         QueueCapacity = 100,
         RequestTimeout = TimeSpan.FromSeconds(30),
+        LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
     }));
 builder.Services.AddHostedService<PdfOrchestratorShutdown>();
 ```
@@ -204,9 +206,45 @@ never retried automatically because rendering to a path or stream may have obser
 
 ## Diagnostics
 
-The internal EventSource provider `PdfiumRaster-Orchestrator` reports request timing, worker process IDs, failures,
-timeouts, and replacement attempts without emitting paths, passwords, tokens, pipe names, or payload data. See
-[diagnostic events](TROUBLESHOOTING.md#diagnostic-events) for collection instructions and event semantics.
+Set `PdfRenderOrchestratorOptions.LoggerFactory` to integrate structured lifecycle logs with the application's normal
+`Microsoft.Extensions.Logging` providers. Trace logs cover individual requests, informational logs cover orchestrator
+and worker lifecycle, warnings cover timeouts, queue rejection, and worker replacement, and terminal orchestrator
+faults are errors. Logging is disabled by default.
+
+Every request also emits an internal activity through
+`PdfRenderOrchestratorDiagnostics.ActivitySourceName`. The activity inherits the caller's `Activity.Current` context,
+covers queueing and execution, and records operation, page count, queue duration, worker index, outcome, and error type
+when applicable. Operational metrics are emitted through `PdfRenderOrchestratorDiagnostics.MeterName`:
+
+| Instrument | Type | Unit | Tags |
+| --- | --- | --- | --- |
+| `pdfiumraster.orchestrator.requests` | Counter | `{request}` | `operation`, `outcome` |
+| `pdfiumraster.orchestrator.request.duration` | Histogram | `s` | `operation`, `outcome` |
+| `pdfiumraster.orchestrator.queue.duration` | Histogram | `s` | `operation` |
+| `pdfiumraster.orchestrator.queue.size` | Observable gauge | `{request}` | none |
+| `pdfiumraster.orchestrator.requests.active` | Observable gauge | `{request}` | none |
+| `pdfiumraster.orchestrator.workers.active` | Observable gauge | `{worker}` | none |
+| `pdfiumraster.orchestrator.worker.restarts` | Counter | `{attempt}` | bounded `reason` |
+| `pdfiumraster.orchestrator.queue.rejections` | Counter | `{request}` | none |
+
+`queue.size` includes submissions waiting for queue capacity in `Wait` mode as well as accepted requests waiting for
+an available worker. This makes admission pressure visible even when producers are being asynchronously throttled.
+
+Configure OpenTelemetry with the public names rather than duplicating string literals:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource(
+        PdfRenderOrchestratorDiagnostics.ActivitySourceName))
+    .WithMetrics(metrics => metrics.AddMeter(
+        PdfRenderOrchestratorDiagnostics.MeterName));
+```
+
+Telemetry excludes PDF and image paths, passwords, pipe names, handshake tokens, worker standard error, document
+bytes, and encoded output. Request IDs and worker process IDs appear only in logs, traces, and `EventSource` events;
+they are never metric tags. The internal `EventSource` provider `PdfiumRaster-Orchestrator` remains available for
+`dotnet-trace`; see [diagnostic events](TROUBLESHOOTING.md#diagnostic-events) for its collection instructions and
+schema.
 
 ## Supported worker platforms
 

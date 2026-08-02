@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace PdfiumRaster.Orchestration.Tests;
 
 public sealed class PdfRenderOrchestratorOptionsTests
@@ -17,9 +19,18 @@ public sealed class PdfRenderOrchestratorOptionsTests
         Assert.Null(options.MaximumBitmapBytes);
         Assert.Null(options.MaximumOutputBytes);
         Assert.Null(options.TemporaryDirectory);
+        Assert.Same(NullLoggerFactory.Instance, options.LoggerFactory);
         Assert.Equal(
             new[] { TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(4) },
             options.WorkerRestartDelays);
+    }
+
+    [Fact]
+    public void LoggerFactoryRejectsNull()
+    {
+        var options = new PdfRenderOrchestratorOptions();
+
+        Assert.Throws<ArgumentNullException>(() => options.LoggerFactory = null!);
     }
 
     [Fact]

@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Diagnostics.Tracing;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 
 namespace PdfiumRaster.Orchestration.Tests;
 
@@ -46,6 +49,110 @@ public sealed class DiagnosticsTests : IDisposable
         Assert.DoesNotContain(events, item => item.Payload.Contains(password, StringComparison.Ordinal));
         Assert.DoesNotContain(events, item => item.Payload.Contains(pdfPath, StringComparison.Ordinal));
         Assert.DoesNotContain(events, item => item.Name == "EventSourceMessage");
+    }
+
+    [Fact]
+    public async Task StandardTelemetryReportsLifecycleWithoutSensitiveValues()
+    {
+        const string password = "standard-telemetry-secret-password";
+        var pdfPath = Path.Combine(AppContext.BaseDirectory, "TestAssets", "smoke.pdf");
+        var missingPdfPath = Path.Combine(AppContext.BaseDirectory, "standard-telemetry-secret-missing.pdf");
+        using var activityListener = new ActivityListener
+        {
+            ShouldListenTo = source =>
+                source.Name == PdfRenderOrchestratorDiagnostics.ActivitySourceName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+        };
+        var activities = new ConcurrentQueue<Activity>();
+        activityListener.ActivityStopped = activities.Enqueue;
+        ActivitySource.AddActivityListener(activityListener);
+
+        using var meterListener = new MeterListener();
+        var measurements = new ConcurrentQueue<CapturedMeasurement>();
+        meterListener.InstrumentPublished = (instrument, listener) =>
+        {
+            if (instrument.Meter.Name == PdfRenderOrchestratorDiagnostics.MeterName)
+            {
+                listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
+            measurements.Enqueue(new CapturedMeasurement(instrument.Name, measurement, tags.ToArray())));
+        meterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, _) =>
+            measurements.Enqueue(new CapturedMeasurement(instrument.Name, measurement, tags.ToArray())));
+        meterListener.Start();
+
+        using var loggerFactory = new CapturingLoggerFactory();
+        using var parent = new Activity("diagnostics-test-parent").Start();
+        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 1,
+            LoggerFactory = loggerFactory,
+        });
+        meterListener.RecordObservableInstruments();
+
+        await orchestrator.RenderPageAsync(pdfPath, pageIndex: 0, password: password);
+        await Assert.ThrowsAsync<PdfWorkerRemoteException>(
+            () => orchestrator.RenderPageAsync(missingPdfPath, pageIndex: 0, password: password));
+        await orchestrator.CompleteAsync();
+        meterListener.RecordObservableInstruments();
+        parent.Stop();
+
+        var requestActivity = Assert.Single(
+            activities,
+            item =>
+                item.ParentSpanId == parent.SpanId &&
+                Equals(item.GetTagItem("pdfiumraster.orchestrator.outcome"), "success"));
+        Assert.Equal("PdfiumRaster.Orchestrator render", requestActivity.DisplayName);
+        Assert.Equal(ActivityStatusCode.Unset, requestActivity.Status);
+        Assert.Equal("render", requestActivity.GetTagItem("pdfiumraster.orchestrator.operation"));
+        Assert.Equal("success", requestActivity.GetTagItem("pdfiumraster.orchestrator.outcome"));
+        Assert.Equal(1, requestActivity.GetTagItem("pdfiumraster.orchestrator.page_count"));
+        var failedActivity = Assert.Single(
+            activities,
+            item =>
+                item.ParentSpanId == parent.SpanId &&
+                Equals(item.GetTagItem("pdfiumraster.orchestrator.outcome"), "error"));
+        Assert.Equal(ActivityStatusCode.Error, failedActivity.Status);
+        Assert.Equal(
+            typeof(PdfWorkerRemoteException).FullName,
+            failedActivity.GetTagItem("error.type"));
+
+        var logs = loggerFactory.Entries.ToArray();
+        Assert.Contains(logs, item => item.EventId == 1000 && item.Level == LogLevel.Information);
+        Assert.Contains(logs, item => item.EventId == 1100 && item.Level == LogLevel.Trace);
+        Assert.Contains(logs, item => item.EventId == 1101 && item.Level == LogLevel.Trace);
+        Assert.Contains(logs, item => item.EventId == 1102 && item.Level == LogLevel.Trace);
+        Assert.Contains(logs, item => item.EventId == 1103 && item.Level == LogLevel.Debug);
+        Assert.Contains(logs, item => item.EventId == 1200 && item.Level == LogLevel.Information);
+        Assert.Contains(logs, item => item.EventId == 1201 && item.Level == LogLevel.Information);
+
+        var capturedMeasurements = measurements.ToArray();
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.requests" &&
+            item.Value == 1 &&
+            item.Tags.Contains(new KeyValuePair<string, object?>("operation", "render")) &&
+            item.Tags.Contains(new KeyValuePair<string, object?>("outcome", "success")));
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.request.duration" && item.Value >= 0);
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.queue.duration" && item.Value >= 0);
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.workers.active" && item.Value >= 1);
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.requests" &&
+            item.Tags.Contains(new KeyValuePair<string, object?>("outcome", "error")));
+
+        var telemetryText = string.Join(
+            "|",
+            logs.Select(item => item.Message)
+                .Concat(activities.Select(item => string.Join(";", item.TagObjects)))
+                .Concat(capturedMeasurements.Select(item => string.Join(";", item.Tags))));
+        Assert.DoesNotContain(password, telemetryText, StringComparison.Ordinal);
+        Assert.DoesNotContain(pdfPath, telemetryText, StringComparison.Ordinal);
+        Assert.DoesNotContain(missingPdfPath, telemetryText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,4 +254,59 @@ public sealed class DiagnosticsTests : IDisposable
         internal string[] Values { get; }
         internal string Payload => string.Join("|", Values);
     }
+
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        internal ConcurrentQueue<CapturedLog> Entries { get; } = new();
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new CapturingLogger(Entries);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        private readonly ConcurrentQueue<CapturedLog> _entries;
+
+        internal CapturingLogger(ConcurrentQueue<CapturedLog> entries)
+        {
+            _entries = entries;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _entries.Enqueue(new CapturedLog(eventId.Id, logLevel, formatter(state, exception)));
+        }
+    }
+
+    private sealed record CapturedLog(int EventId, LogLevel Level, string Message);
+
+    private sealed record CapturedMeasurement(
+        string Name,
+        double Value,
+        KeyValuePair<string, object?>[] Tags);
 }

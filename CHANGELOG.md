@@ -3,7 +3,19 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.5.0 - Unreleased
+## 0.6.0 - Unreleased
+
+### Added
+
+- Add optional structured `ILoggerFactory` logging, correlated request activities, and operational metrics for queue,
+  request, and worker health while retaining the existing EventSource diagnostics.
+
+### Documentation
+
+- Emphasize choosing exactly one all-runtime or platform-specific package and document every orchestrator option
+  default and the standard .NET/OpenTelemetry observability setup.
+
+## 0.5.0 - 2026-08-02
 
 ### Added
 

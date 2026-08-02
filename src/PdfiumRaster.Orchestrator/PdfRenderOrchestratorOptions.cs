@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace PdfiumRaster.Orchestration;
 
 /// <summary>
@@ -16,6 +19,7 @@ public sealed class PdfRenderOrchestratorOptions
     private long? _maximumBitmapBytes;
     private long? _maximumOutputBytes;
     private string? _temporaryDirectory;
+    private ILoggerFactory _loggerFactory = NullLoggerFactory.Instance;
     private TimeSpan[] _workerRestartDelays =
     {
         TimeSpan.FromMilliseconds(250),
@@ -240,6 +244,20 @@ public sealed class PdfRenderOrchestratorOptions
 
             _temporaryDirectory = value is null ? null : Path.GetFullPath(value);
         }
+    }
+
+    /// <summary>
+    /// Gets or sets the factory used to create structured diagnostic loggers.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see cref="NullLoggerFactory.Instance" />, which disables logging. The factory is snapshotted
+    /// when the orchestrator is constructed. Logs never include PDF or image paths, passwords, pipe names, handshake
+    /// tokens, worker standard error, or document payloads.
+    /// </remarks>
+    public ILoggerFactory LoggerFactory
+    {
+        get => _loggerFactory;
+        set => _loggerFactory = value ?? throw new ArgumentNullException(nameof(value));
     }
 
     private static long? ValidateOptionalByteLimit(long? value)

@@ -115,6 +115,24 @@ are unacceptable.
 `PdfWorkerRemoteException` is different: the worker caught an ordinary rendering or encoding exception and returned
 its managed type and message. That worker remains healthy and is reused.
 
+## Standard observability
+
+Set `PdfRenderOrchestratorOptions.LoggerFactory` to the host's `ILoggerFactory` to receive structured logs under the
+`PdfiumRaster.Orchestration.PdfRenderOrchestrator` category. Logging is a no-op by default. Per-request success logs are
+`Trace`, ordinary request failures and cancellations are `Debug`, lifecycle events are `Information`, recoverable
+timeouts, queue rejections, and worker replacement events are `Warning`, and terminal orchestrator faults are `Error`.
+
+OpenTelemetry and other listeners can subscribe to the activity source and meter named `PdfiumRaster.Orchestrator`.
+Use `PdfRenderOrchestratorDiagnostics.ActivitySourceName` and `MeterName` in application configuration. Activities
+inherit the submitting caller's trace context. Metrics use only bounded operation, outcome, and restart-reason tags;
+request IDs, worker indexes, and process IDs are not metric dimensions. The complete instrument table and an
+OpenTelemetry setup example are in the [API guide](API.md#diagnostics).
+
+Structured logs, activities, metrics, and EventSource events never contain PDF or image paths, passwords, pipe names,
+handshake tokens, worker standard error, document bytes, or encoded output. Log the exception returned to application
+code separately when its message, stack trace, or bounded worker standard error is required for a controlled internal
+diagnostic record.
+
 ## Diagnostic events
 
 The library emits an internal `EventSource` provider named `PdfiumRaster-Orchestrator`. It reports:

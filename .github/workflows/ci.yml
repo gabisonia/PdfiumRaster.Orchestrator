@@ -65,7 +65,7 @@ jobs:
           cd "$tmpdir/compatibility"
           dotnet new nugetconfig --force
           dotnet nuget add source "$GITHUB_WORKSPACE/artifacts" --name local --configfile nuget.config
-          dotnet add package PdfiumRaster.Orchestrator --version 0.5.0
+          dotnet add package PdfiumRaster.Orchestrator --version 0.6.0
           dotnet build --configuration Release
 
       - name: Upload package
@@ -102,7 +102,7 @@ jobs:
 
       - name: Smoke test packaged worker
         shell: pwsh
-        run: ./eng/SmokePackage.ps1 -RepositoryRoot . -PackageVersion 0.5.0
+        run: ./eng/SmokePackage.ps1 -RepositoryRoot . -PackageVersion 0.6.0
 
       - name: Smoke test current-platform slim package
         shell: pwsh
@@ -110,4 +110,4 @@ jobs:
           $ridLine = dotnet --info | Select-String -Pattern '^\s*RID:\s+(\S+)' | Select-Object -First 1
           if (-not $ridLine) { throw 'Could not determine the current .NET runtime identifier.' }
           $rid = $ridLine.Matches[0].Groups[1].Value
-          ./eng/SmokePackage.ps1 -RepositoryRoot . -PackageVersion 0.5.0 -PackageId "PdfiumRaster.Orchestrator.$rid"
+          ./eng/SmokePackage.ps1 -RepositoryRoot . -PackageVersion 0.6.0 -PackageId "PdfiumRaster.Orchestrator.$rid"

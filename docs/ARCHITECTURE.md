@@ -197,8 +197,14 @@ outputs.
 
 ## Operational diagnostics
 
-An internal EventSource named `PdfiumRaster-Orchestrator` emits orchestrator, request, and worker lifecycle events.
-Request events include process-local correlation IDs and timing but exclude paths, passwords, pipe names, tokens,
-standard error, and document bytes. Worker events include the worker index and process ID; failure events include only
-the managed exception type. This keeps the transport private while allowing queue delay, execution time, crashes,
-timeouts, and replacement activity to be observed with standard .NET diagnostics tooling.
+Observability is emitted through four complementary standard .NET mechanisms. An optional `ILoggerFactory` produces
+structured orchestrator, request, and worker lifecycle logs. `ActivitySource` creates one internal activity per request
+using the caller's parent context and covering both queue and execution time. `Meter` reports bounded-cardinality
+request, duration, queue, worker, restart, and rejection measurements suitable for continuous collection. The existing
+internal `EventSource` named `PdfiumRaster-Orchestrator` remains available for on-demand `dotnet-trace` diagnostics.
+
+Request telemetry includes process-local correlation IDs and timing where the signal permits it but excludes paths,
+passwords, pipe names, tokens, standard error, and document bytes. Worker logs and events include the worker index and
+process ID; failures include only the managed exception type. Request and process IDs are deliberately excluded from
+metric tags. This keeps the transport private while allowing queue delay, execution time, crashes, timeouts, worker
+availability, and replacement activity to be observed with standard .NET and OpenTelemetry tooling.

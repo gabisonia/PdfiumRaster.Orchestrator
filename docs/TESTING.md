@@ -30,7 +30,7 @@ failure, ownership, and lifecycle path it introduces.
 | Worker failures | Startup exit and timeout, invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, successful replacement, and exhausted replacement attempts. |
 | Exceptions | Public constructors and exposed crash, timeout, remote-error, startup, queue-full, and protocol-error properties. |
 | Pipe protocol | Golden version-two vectors, batch and resource-limit fields, fragmented frames, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |
-| Diagnostics | Stable identity, level, and payload shape for all events plus end-to-end lifecycle emission and sensitive-data exclusion. |
+| Diagnostics | Stable EventSource identity, level, and payload shape; structured log lifecycle events; correlated request activities; operational metric emission; and sensitive-data exclusion across every signal. |
 | Packaging | Required NuGet assets, all-runtime and one-worker RID packages, `netstandard2.1` consumption, and both package shapes rendering on Linux, Windows, and macOS. |
 
 The coverage percentage from one machine does not execute operating-system and architecture rejection branches that

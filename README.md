@@ -67,7 +67,8 @@ See [worker package choices](docs/API.md#worker-package-choices) for every suppo
 > `new PdfRenderOrchestrator()` uses bounded defaults without requiring an options object: up to four workers, a
 > 42-request waiting queue, wait-mode backpressure, a 256-page batch limit, a 15-second worker startup timeout, and
 > three worker-replacement attempts. Hard request timeouts and byte limits are disabled by default, and worker
-> temporary files use the operating-system temporary directory. See the complete
+> temporary files use the operating-system temporary directory. Structured logging is also disabled until an
+> `ILoggerFactory` is supplied. See the complete
 > [default options table](docs/API.md#default-options).
 
 The following example customizes the timeout and resource limits:
@@ -134,6 +135,25 @@ The queue is bounded. `PdfRenderQueueFullMode.Wait` applies asynchronous backpre
 drains accepted work, while `CancelAsync()` and `Dispose()` cancel queued work and wait for active uninterruptible work
 before stopping the workers.
 
+## Observability
+
+The orchestrator supports the standard .NET observability stack while retaining its `PdfiumRaster-Orchestrator`
+`EventSource` for `dotnet-trace`. Pass the application's `ILoggerFactory` for structured lifecycle and failure logs:
+
+```csharp
+var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+{
+    LoggerFactory = loggerFactory,
+});
+```
+
+Request activities and operational metrics use the public
+`PdfRenderOrchestratorDiagnostics.ActivitySourceName` and `PdfRenderOrchestratorDiagnostics.MeterName` constants.
+OpenTelemetry applications can register those names with `AddSource(...)` and `AddMeter(...)`. Telemetry includes
+queue and execution durations, outcomes, queue depth, active requests, worker availability, restarts, and rejections,
+but never PDF or image paths, passwords, pipe data, worker standard error, or document content. See
+[diagnostics](docs/API.md#diagnostics) for the metric schema and setup example.
+
 In ASP.NET Core, register one orchestrator singleton per application process and inject it into controllers or scoped
 services:
 
@@ -143,12 +163,13 @@ using PdfiumRaster.Orchestration;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<PdfRenderOrchestrator>(_ =>
+builder.Services.AddSingleton<PdfRenderOrchestrator>(services =>
     new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
     {
         WorkerCount = Math.Min(Environment.ProcessorCount, 4),
         QueueCapacity = 100,
         RequestTimeout = TimeSpan.FromSeconds(30),
+        LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
     }));
 ```
 
