@@ -63,3 +63,13 @@ PdfiumRaster.Orchestration.PdfRenderResourceLimitException
 PdfiumRaster.Orchestration.PdfRenderResourceLimitException.Limit.get -> long
 PdfiumRaster.Orchestration.PdfRenderResourceLimitException.Observed.get -> long
 PdfiumRaster.Orchestration.PdfRenderResourceLimitException.Resource.get -> string!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics
+const PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics.ActivitySourceName = "PdfiumRaster.Orchestrator" -> string!
+const PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics.MeterName = "PdfiumRaster.Orchestrator" -> string!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.LoggerFactory.get -> Microsoft.Extensions.Logging.ILoggerFactory!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.LoggerFactory.set -> void
+Microsoft.Extensions.DependencyInjection.PdfiumRasterOrchestratorServiceCollectionExtensions
+static Microsoft.Extensions.DependencyInjection.PdfiumRasterOrchestratorServiceCollectionExtensions.AddPdfiumRasterOrchestrator(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "pdfiumraster-orchestrator", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static Microsoft.Extensions.DependencyInjection.PdfiumRasterOrchestratorServiceCollectionExtensions.AddPdfiumRasterOrchestrator(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Microsoft.Extensions.DependencyInjection.PdfiumRasterOrchestratorServiceCollectionExtensions.AddPdfiumRasterOrchestrator(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.DisposeAsync() -> System.Threading.Tasks.ValueTask

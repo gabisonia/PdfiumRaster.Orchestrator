@@ -14,6 +14,13 @@ internal static class Program
     {
         var mode = Environment.GetEnvironmentVariable(ModeEnvironmentVariable) ?? "healthy";
         var stateFile = Environment.GetEnvironmentVariable(StateFileEnvironmentVariable);
+        if (mode == "disconnect-once" &&
+            !string.IsNullOrWhiteSpace(stateFile) &&
+            File.Exists(stateFile))
+        {
+            mode = "valid-bitmap";
+        }
+
         if (mode == "disconnect-then-replacements-fail" &&
             !string.IsNullOrWhiteSpace(stateFile) &&
             File.Exists(stateFile))
@@ -106,6 +113,13 @@ internal static class Program
                     }
 
                     return 29;
+                case "disconnect-once":
+                    if (!string.IsNullOrWhiteSpace(stateFile))
+                    {
+                        await File.WriteAllTextAsync(stateFile, "failed").ConfigureAwait(false);
+                    }
+
+                    return 30;
                 case "invalid-bitmap-header":
                     await WorkerProtocol.WriteFrameAsync(
                             pipe,

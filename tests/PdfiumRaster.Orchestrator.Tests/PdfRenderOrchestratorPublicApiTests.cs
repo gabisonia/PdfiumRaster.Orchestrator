@@ -263,6 +263,19 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
     }
 
     [Fact]
+    public async Task DisposeAsyncIsIdempotentAndDisposedInstanceRejectsSubmissions()
+    {
+        var orchestrator = CreateOrchestrator();
+
+        var firstDisposal = orchestrator.DisposeAsync().AsTask();
+        var secondDisposal = orchestrator.DisposeAsync().AsTask();
+        await Task.WhenAll(firstDisposal, secondDisposal);
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0));
+    }
+
+    [Fact]
     public void WorkerExceptionPublicConstructorsPreserveMessagesAndInnerExceptions()
     {
         var direct = new PdfWorkerException("direct");

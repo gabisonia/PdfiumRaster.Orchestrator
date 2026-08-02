@@ -17,7 +17,7 @@ namespace PdfiumRaster.Orchestration;
 /// <see cref="PdfRenderOrchestratorOptions.WorkerCount" /> native operations can run simultaneously. Workers use the
 /// caller's operating-system identity and filesystem permissions and are not a security sandbox.
 /// </remarks>
-public sealed class PdfRenderOrchestrator : IDisposable
+public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 {
     private readonly Channel<OrchestrationJob> _queue;
     private readonly ILogger _logger;
@@ -473,6 +473,53 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
         BeginShutdown(cancel: true);
         _completion.GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Asynchronously cancels queued requests, waits for active uninterruptible work, and stops all worker processes.
+    /// </summary>
+    /// <returns>A task-like value that completes after workers exit.</returns>
+    public ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return default;
+        }
+
+        BeginShutdown(cancel: true);
+        return new ValueTask(_completion);
+    }
+
+    internal PdfRenderOrchestratorHealthSnapshot GetHealthSnapshot()
+    {
+        var availableWorkers = 0;
+        foreach (var worker in _workers)
+        {
+            if (worker.IsAvailable)
+            {
+                availableWorkers++;
+            }
+        }
+
+        PdfRenderOrchestratorHealthState state;
+        if (Volatile.Read(ref _terminalError) is not null)
+        {
+            state = PdfRenderOrchestratorHealthState.TerminalFailure;
+        }
+        else if (Volatile.Read(ref _accepting) == 0 || Volatile.Read(ref _disposed) != 0)
+        {
+            state = PdfRenderOrchestratorHealthState.Stopped;
+        }
+        else if (availableWorkers == _workers.Length)
+        {
+            state = PdfRenderOrchestratorHealthState.Healthy;
+        }
+        else
+        {
+            state = PdfRenderOrchestratorHealthState.Degraded;
+        }
+
+        return new PdfRenderOrchestratorHealthSnapshot(state, availableWorkers, _workers.Length);
     }
 
     private Task<PdfBitmap> SubmitRender(
@@ -1734,10 +1781,13 @@ public sealed class PdfRenderOrchestrator : IDisposable
 
         internal int Index { get; }
 
+        internal bool IsAvailable => Volatile.Read(ref _connection)?.IsAvailable == true;
+
         internal async Task StartAsync()
         {
-            _connection = await WorkerConnection.StartAsync(Index, _startupTimeout, _temporaryDirectory, _logger)
+            var connection = await WorkerConnection.StartAsync(Index, _startupTimeout, _temporaryDirectory, _logger)
                 .ConfigureAwait(false);
+            Volatile.Write(ref _connection, connection);
         }
 
         internal Task<IReadOnlyList<PdfBitmap>?> ExecuteAsync(
@@ -1819,6 +1869,9 @@ public sealed class PdfRenderOrchestrator : IDisposable
                 _processExited.TrySetResult(null);
             }
         }
+
+        internal bool IsAvailable =>
+            Volatile.Read(ref _disposed) == 0 && !_processExited.Task.IsCompleted;
 
         internal static async Task<WorkerConnection> StartAsync(
             int index,

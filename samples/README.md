@@ -38,10 +38,11 @@ complexity, memory limits, and the desired balance between reuse and parallelism
 
 ## ASP.NET Core lifecycle and observability
 
-The compilable [`AspNetLifecycle`](AspNetLifecycle/) sample registers one orchestrator singleton, supplies the host's
-`ILoggerFactory`, subscribes OpenTelemetry to the orchestrator activity source and meter, and drains the orchestrator
-from an `IHostedService` at host shutdown. Its console exporter is intended only to make traces and metrics visible
-while learning or debugging; configure the application's production exporter separately.
+The compilable [`AspNetLifecycle`](AspNetLifecycle/) sample uses `AddPdfiumRasterOrchestrator` for singleton ownership,
+automatic host logging, startup, and graceful shutdown. It registers the orchestrator readiness check at
+`/health/ready` and subscribes OpenTelemetry to the orchestrator activity source and meter. Its console exporter is
+intended only to make traces and metrics visible while learning or debugging; configure the application's production
+exporter separately.
 
 Run the sample on a known URL:
 
@@ -58,6 +59,12 @@ curl -X POST http://localhost:5050/render \
   -d '{"pdfPath":"/absolute/path/to/input.pdf","pageIndex":0}'
 ```
 
+Check readiness without rendering a PDF:
+
+```bash
+curl http://localhost:5050/health/ready
+```
+
 The endpoint is intentionally small and demonstrates local path rendering; validate and authorize path inputs before
-adapting it for a production application. See the [lifetime guide](../docs/API.md#aspnet-core-application-lifetime)
+adapting it for a production application. See the [hosting guide](../docs/API.md#net-hosting-and-health-checks)
 and the complete [observability schema](../docs/API.md#diagnostics).

@@ -27,6 +27,7 @@ failure, ownership, and lifecycle path it introduces.
 | Ownership | Owned and caller-owned input streams across success, validation failure, cancellation, rejection, and timeout; output streams always remain caller-owned. |
 | Scheduling | Wait-mode backpressure, reject mode, bounded queueing, queued cancellation, and multi-worker concurrency. |
 | Lifetime | Graceful draining, cancellation shutdown, repeated completion, repeated disposal, post-completion rejection, and post-disposal rejection. |
+| Hosting and health | Singleton and hosted-service registration, automatic logging, graceful and canceled host shutdown, async disposal, and healthy, degraded, recovered, stopped, and terminal health states. |
 | Worker failures | Startup exit and timeout, invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, successful replacement, and exhausted replacement attempts. |
 | Exceptions | Public constructors and exposed crash, timeout, remote-error, startup, queue-full, and protocol-error properties. |
 | Pipe protocol | Golden version-two vectors, batch and resource-limit fields, fragmented frames, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |

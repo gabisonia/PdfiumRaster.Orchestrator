@@ -3,6 +3,21 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0 - 2026-08-02
+
+### Added
+
+- Add `AddPdfiumRasterOrchestrator` dependency-injection and hosted-lifecycle registration with automatic host logging,
+  graceful draining, and shutdown-deadline cancellation.
+- Add a standard .NET health check that reports healthy, degraded during worker replacement, or unhealthy after a
+  terminal failure or shutdown without rendering a probe document.
+- Add asynchronous disposal through `IAsyncDisposable` and `DisposeAsync()`.
+
+### Documentation
+
+- Update the ASP.NET Core sample and hosting guidance to use the first-class registration and expose a readiness
+  endpoint.
+
 ## 0.6.0 - 2026-08-02
 
 ### Added

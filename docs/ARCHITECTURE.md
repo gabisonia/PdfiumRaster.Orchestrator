@@ -208,3 +208,8 @@ passwords, pipe names, tokens, standard error, and document bytes. Worker logs a
 process ID; failures include only the managed exception type. Request and process IDs are deliberately excluded from
 metric tags. This keeps the transport private while allowing queue delay, execution time, crashes, timeouts, worker
 availability, and replacement activity to be observed with standard .NET and OpenTelemetry tooling.
+
+The optional .NET health-check integration reads the same in-memory admission, terminal-failure, and worker-connection
+state. It reports degraded while any worker slot is disconnected during replacement and unhealthy after admission
+closes or a terminal failure occurs. The check does not add protocol messages, render a probe document, access input
+paths, or create a separate worker process.

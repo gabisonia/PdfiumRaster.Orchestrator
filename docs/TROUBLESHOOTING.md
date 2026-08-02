@@ -128,6 +128,12 @@ inherit the submitting caller's trace context. Metrics use only bounded operatio
 request IDs, worker indexes, and process IDs are not metric dimensions. The complete instrument table and an
 OpenTelemetry setup example are in the [API guide](API.md#diagnostics).
 
+Applications using `AddPdfiumRasterOrchestrator` can also register the standard readiness check with
+`AddHealthChecks().AddPdfiumRasterOrchestrator()`. `Degraded` means at least one worker is temporarily unavailable,
+usually during replacement. `Unhealthy` means the orchestrator has terminally faulted or has started shutting down;
+inspect the lifecycle logs and worker-restart metric to distinguish those cases. The check is passive and never
+renders a diagnostic PDF.
+
 Structured logs, activities, metrics, and EventSource events never contain PDF or image paths, passwords, pipe names,
 handshake tokens, worker standard error, document bytes, or encoded output. Log the exception returned to application
 code separately when its message, stack trace, or bounded worker standard error is required for a controlled internal

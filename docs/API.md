@@ -147,47 +147,52 @@ The stable `Resource` values are `input bytes`, `bitmap bytes`, and `output byte
 ## Lifetime and shutdown
 
 `CompleteAsync()` stops accepting submissions, drains accepted work, and shuts workers down. `CancelAsync()` cancels
-queued work, waits for active uninterruptible work, and stops workers. `Dispose()` follows the cancellation path and
-blocks until shutdown completes. Do not create an orchestrator per request.
+queued work, waits for active uninterruptible work, and stops workers. `Dispose()` and `DisposeAsync()` follow the
+cancellation path; prefer asynchronous disposal when the calling lifetime supports it. Do not create an orchestrator
+per request.
 
-### ASP.NET Core application lifetime
+### .NET hosting and health checks
 
-Register one singleton per host process:
-
-```csharp
-builder.Services.AddSingleton<PdfRenderOrchestrator>(services =>
-    new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
-    {
-        WorkerCount = Math.Min(Environment.ProcessorCount, 4),
-        QueueCapacity = 100,
-        RequestTimeout = TimeSpan.FromSeconds(30),
-        LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
-    }));
-builder.Services.AddHostedService<PdfOrchestratorShutdown>();
-```
-
-Inject that singleton into controllers and scoped services. Drain it once when the host stops:
+For a .NET Generic Host or ASP.NET Core application, use the built-in registration rather than manually creating a
+singleton and shutdown service:
 
 ```csharp
-using PdfiumRaster.Orchestration;
-
-public sealed class PdfOrchestratorShutdown : IHostedService
+builder.Services.AddPdfiumRasterOrchestrator(options =>
 {
-    private readonly PdfRenderOrchestrator _orchestrator;
-
-    public PdfOrchestratorShutdown(PdfRenderOrchestrator orchestrator)
-    {
-        _orchestrator = orchestrator;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StopAsync(CancellationToken cancellationToken) => _orchestrator.CompleteAsync();
-}
+    options.WorkerCount = Math.Min(Environment.ProcessorCount, 4);
+    options.QueueCapacity = 100;
+    options.RequestTimeout = TimeSpan.FromSeconds(30);
+});
 ```
 
-The dependency injection container disposes the singleton afterward. Each replica has its own singleton, so total
-workers equal `WorkerCount` multiplied by the number of application replicas.
+The extension registers one `PdfRenderOrchestrator` singleton and one internal `IHostedService`. The host's
+`ILoggerFactory` is assigned before the configuration callback runs, so an application can still replace it in the
+callback. Workers start when the host resolves hosted services. Normal shutdown calls `CompleteAsync()` to drain
+accepted work; if the host shutdown token is canceled, the integration switches to `CancelAsync()` so queued work is
+canceled. Repeated registration calls retain the first singleton configuration and do not duplicate the hosted
+service.
+
+Add the optional readiness check and map it in ASP.NET Core:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddPdfiumRasterOrchestrator(tags: new[] { "ready" });
+
+var app = builder.Build();
+app.MapHealthChecks("/health/ready");
+```
+
+The default health-check name is `pdfiumraster-orchestrator`; the name, exception failure status, and tags are
+configurable. Its status is:
+
+- `Healthy` when the orchestrator accepts requests and every configured worker is available.
+- `Degraded` while one or more workers are unavailable or being replaced, including a transient zero-worker period.
+- `Unhealthy` after a terminal worker failure or when completion, cancellation, or disposal starts.
+
+The check reads in-memory lifecycle state. It does not render a document, write files, communicate over the worker
+pipe, or create a separate probe worker. Inject the singleton into controllers and scoped services, but do not call
+`CompleteAsync()` from request code. Each replica has its own singleton, so total workers equal `WorkerCount`
+multiplied by the number of application replicas.
 
 ## Error handling
 

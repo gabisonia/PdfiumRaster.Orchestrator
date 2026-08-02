@@ -1,6 +1,1 @@
 #nullable enable
-PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics
-const PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics.ActivitySourceName = "PdfiumRaster.Orchestrator" -> string!
-const PdfiumRaster.Orchestration.PdfRenderOrchestratorDiagnostics.MeterName = "PdfiumRaster.Orchestrator" -> string!
-PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.LoggerFactory.get -> Microsoft.Extensions.Logging.ILoggerFactory!
-PdfiumRaster.Orchestration.PdfRenderOrchestratorOptions.LoggerFactory.set -> void

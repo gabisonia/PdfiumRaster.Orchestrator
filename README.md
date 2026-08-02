@@ -132,8 +132,8 @@ orchestrator disposal even though the request task has already timed out.
 
 The queue is bounded. `PdfRenderQueueFullMode.Wait` applies asynchronous backpressure;
 `PdfRenderQueueFullMode.Reject` faults a rejected submission with `PdfRenderQueueFullException`. `CompleteAsync()`
-drains accepted work, while `CancelAsync()` and `Dispose()` cancel queued work and wait for active uninterruptible work
-before stopping the workers.
+drains accepted work, while `CancelAsync()`, `Dispose()`, and `DisposeAsync()` cancel queued work and wait for active
+uninterruptible work before stopping the workers.
 
 ## Observability
 
@@ -154,8 +154,12 @@ queue and execution durations, outcomes, queue depth, active requests, worker av
 but never PDF or image paths, passwords, pipe data, worker standard error, or document content. See
 [diagnostics](docs/API.md#diagnostics) for the metric schema and setup example.
 
-In ASP.NET Core, register one orchestrator singleton per application process and inject it into controllers or scoped
-services:
+> [!IMPORTANT]
+> In a .NET Generic Host or ASP.NET Core application, use `AddPdfiumRasterOrchestrator`. It registers exactly one
+> orchestrator, automatically supplies the host logger factory, starts the workers with the host, and handles graceful
+> shutdown. Do not create an orchestrator per request or add a second manual singleton.
+
+Register the orchestrator and its readiness check:
 
 ```csharp
 using PdfiumRaster;
@@ -163,21 +167,24 @@ using PdfiumRaster.Orchestration;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<PdfRenderOrchestrator>(services =>
-    new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
-    {
-        WorkerCount = Math.Min(Environment.ProcessorCount, 4),
-        QueueCapacity = 100,
-        RequestTimeout = TimeSpan.FromSeconds(30),
-        LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
-    }));
+builder.Services.AddPdfiumRasterOrchestrator(options =>
+{
+    options.WorkerCount = Math.Min(Environment.ProcessorCount, 4);
+    options.QueueCapacity = 100;
+    options.RequestTimeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHealthChecks()
+    .AddPdfiumRasterOrchestrator(tags: new[] { "ready" });
+
+var app = builder.Build();
+app.MapHealthChecks("/health/ready");
 ```
 
-Do not create an orchestrator per request and do not call `CompleteAsync()` from request code. Drain it once during host
-shutdown with an `IHostedService`; the DI container disposes the singleton afterward. Each application replica owns
-its own singleton, so total worker processes equal the worker count multiplied by the number of replicas. See the
-[ASP.NET Core lifetime guide](docs/API.md#aspnet-core-application-lifetime)
-for the complete hosted-service implementation.
+The readiness check is healthy when all workers are available, degraded during worker replacement, and unhealthy
+after a terminal failure or once shutdown begins. It inspects in-memory state and does not render a probe PDF. Each
+application replica owns its own singleton, so total worker processes equal the worker count multiplied by the number
+of replicas. See the [hosting and health-check guide](docs/API.md#net-hosting-and-health-checks) for registration
+options and shutdown semantics.
 
 Worker startup failures throw `PdfWorkerStartupException`. Active crashes and hard timeouts throw
 `PdfWorkerCrashedException` and `PdfWorkerTimeoutException` for the affected request, then start a replacement worker.

@@ -10,7 +10,7 @@
     <RootNamespace>PdfiumRaster.Orchestration</RootNamespace>
     <PackageId Condition="'$(PdfiumRasterOrchestratorPackageRid)' == ''">PdfiumRaster.Orchestrator</PackageId>
     <PackageId Condition="'$(PdfiumRasterOrchestratorPackageRid)' != ''">PdfiumRaster.Orchestrator.$(PdfiumRasterOrchestratorPackageRid)</PackageId>
-    <VersionPrefix>0.6.0</VersionPrefix>
+    <VersionPrefix>0.7.0</VersionPrefix>
     <Authors>PdfiumRaster contributors</Authors>
     <Title Condition="'$(PdfiumRasterOrchestratorPackageRid)' == ''">PdfiumRaster Orchestrator</Title>
     <Title Condition="'$(PdfiumRasterOrchestratorPackageRid)' != ''">PdfiumRaster Orchestrator ($(PdfiumRasterOrchestratorPackageRid))</Title>
@@ -35,6 +35,9 @@
                       PrivateAssets="all"
                       IncludeAssets="runtime; build; native; contentfiles; analyzers" />
     <PackageReference Include="PdfiumRaster" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="System.Diagnostics.DiagnosticSource" />
     <PackageReference Include="System.Threading.Channels" />

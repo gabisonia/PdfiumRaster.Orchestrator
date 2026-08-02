@@ -11,18 +11,18 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
         .AddMeter(PdfRenderOrchestratorDiagnostics.MeterName)
         .AddConsoleExporter());
-builder.Services.AddSingleton<PdfRenderOrchestrator>(services =>
-    new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
-    {
-        WorkerCount = Math.Min(Environment.ProcessorCount, 4),
-        QueueCapacity = 100,
-        RequestTimeout = TimeSpan.FromSeconds(30),
-        LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
-    }));
-builder.Services.AddHostedService<PdfOrchestratorShutdown>();
+builder.Services.AddPdfiumRasterOrchestrator(options =>
+{
+    options.WorkerCount = Math.Min(Environment.ProcessorCount, 4);
+    options.QueueCapacity = 100;
+    options.RequestTimeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHealthChecks()
+    .AddPdfiumRasterOrchestrator(tags: new[] { "ready" });
 
 var app = builder.Build();
 app.MapGet("/", () => "PdfiumRaster.Orchestrator is ready.");
+app.MapHealthChecks("/health/ready");
 app.MapPost("/render", async (
     RenderRequest request,
     PdfRenderOrchestrator orchestrator,
@@ -37,17 +37,3 @@ app.MapPost("/render", async (
 await app.RunAsync();
 
 internal sealed record RenderRequest(string PdfPath, int PageIndex = 0);
-
-internal sealed class PdfOrchestratorShutdown : IHostedService
-{
-    private readonly PdfRenderOrchestrator _orchestrator;
-
-    public PdfOrchestratorShutdown(PdfRenderOrchestrator orchestrator)
-    {
-        _orchestrator = orchestrator;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StopAsync(CancellationToken cancellationToken) => _orchestrator.CompleteAsync();
-}

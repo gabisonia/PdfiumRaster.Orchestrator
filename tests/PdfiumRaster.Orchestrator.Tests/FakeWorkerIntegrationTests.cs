@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
 namespace PdfiumRaster.Orchestration.Tests;
 
 public sealed class FakeWorkerIntegrationTests : IDisposable
@@ -205,10 +207,40 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
 
         await Assert.ThrowsAsync<PdfWorkerCrashedException>(() => crashing);
         await Assert.ThrowsAsync<PdfWorkerStartupException>(() => pending);
+        var terminalHealth = await new PdfiumRasterOrchestratorHealthCheck(orchestrator)
+            .CheckHealthAsync(new HealthCheckContext());
+        Assert.Equal(HealthStatus.Unhealthy, terminalHealth.Status);
+        Assert.Contains("terminal worker failure", terminalHealth.Description);
         await Assert.ThrowsAsync<PdfWorkerStartupException>(() => orchestrator.CompleteAsync());
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => orchestrator.RenderPageAsync("unused.pdf", 0));
         Assert.Throws<PdfWorkerStartupException>(() => orchestrator.Dispose());
+    }
+
+    [Fact]
+    public async Task HealthCheckIsDegradedDuringReplacementAndHealthyAfterRecovery()
+    {
+        SetMode("disconnect-once");
+        _stateFile = Path.Combine(Path.GetTempPath(), $"pdfium-fake-state-{Guid.NewGuid():N}");
+        Environment.SetEnvironmentVariable(StateFileVariable, _stateFile);
+        var options = CreateOptions();
+        options.WorkerRestartDelays = new[] { TimeSpan.FromSeconds(1) };
+        await using var orchestrator = new PdfRenderOrchestrator(options);
+        var healthCheck = new PdfiumRasterOrchestratorHealthCheck(orchestrator);
+
+        await Assert.ThrowsAsync<PdfWorkerCrashedException>(
+            () => orchestrator.RenderPageAsync("unused.pdf", 0));
+        var replacing = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        Assert.Equal(HealthStatus.Degraded, replacing.Status);
+        Assert.Equal(0, replacing.Data["available_workers"]);
+
+        var bitmap = await orchestrator.RenderPageAsync("unused.pdf", 0);
+        var recovered = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, bitmap.Pixels);
+        Assert.Equal(HealthStatus.Healthy, recovered.Status);
+        await orchestrator.CompleteAsync();
     }
 
     [Fact]
