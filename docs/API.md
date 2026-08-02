@@ -9,14 +9,20 @@ dotnet add package PdfiumRaster.Orchestrator
 
 ## Creating an orchestrator
 
-Create one long-lived `PdfRenderOrchestrator` for each application process. The parameterless constructor uses all
-default options:
+Create one long-lived `PdfRenderOrchestrator` for each application process. Prefer cancellable asynchronous creation
+when the application has an asynchronous startup path:
 
 ```csharp
 using PdfiumRaster.Orchestration;
 
-using var orchestrator = new PdfRenderOrchestrator();
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(
+    cancellationToken: startupCancellationToken);
 ```
+
+`CreateAsync` completes only after every worker has connected and finished its handshake. Cancellation stops and
+cleans up partially started workers. `new PdfRenderOrchestrator()` remains available for synchronous callers and also
+returns only after all workers are ready. In Generic Host and ASP.NET Core applications, use the hosting integration;
+it performs asynchronous startup automatically.
 
 ### Default options
 
@@ -41,7 +47,7 @@ configuration rather than a representation of the defaults:
 ```csharp
 using PdfiumRaster.Orchestration;
 
-using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
 {
     WorkerCount = Math.Min(Environment.ProcessorCount, 4),
     QueueCapacity = 100,
@@ -80,9 +86,10 @@ worker.
 
 Page indexes are zero-based. Path, `byte[]`, and `Stream` PDF inputs are accepted. Prefer paths for large documents.
 Byte arrays and streams must cross the named pipe and are spooled to a worker-owned, owner-only temporary directory.
-Input streams are read from their current position. Unless `leaveOpen: true` is passed, the orchestrator assumes
-ownership when the method is called and disposes the input after completion, cancellation, validation failure, or queue
-rejection.
+Input streams are read from their current position. Unless `leaveOpen: true` is passed, task-returning APIs assume
+ownership when the method is called and dispose the input after completion, cancellation, validation failure, or queue
+rejection. `RenderPagesStreamAsync` is lazy: validation, submission, and stream ownership begin when enumeration
+starts; an enumerable that is never enumerated does not take ownership.
 
 ```csharp
 using PdfiumRaster;
@@ -116,9 +123,10 @@ PDF bytes, so queued byte-array inputs can still retain substantial managed memo
 
 Use a batch when several pages come from the same PDF. The PDF is transferred once for array/stream inputs, opened once
 with `PdfRenderSession`, and processed in order on one worker. `RenderPagesAsync` returns caller-owned bitmaps in the
-same order as the requested zero-based indexes; repeated indexes are allowed. `SavePagesAsync` accepts exact
-`PdfPageFileOutput` mappings, requires unique output paths, and commits each file through a same-directory temporary
-file so an encoding or size-limit failure does not replace an existing destination with a partial file.
+same order as the requested zero-based indexes; repeated indexes are allowed. It retains all bitmap pixel arrays until
+the full batch completes. `SavePagesAsync` accepts exact `PdfPageFileOutput` mappings, requires unique output paths,
+and commits each file through a same-directory temporary file so an encoding or size-limit failure does not replace an
+existing destination with a partial file.
 
 ```csharp
 var bitmaps = await orchestrator.RenderPagesAsync("input.pdf", new[] { 0, 3, 7 });
@@ -130,6 +138,31 @@ await orchestrator.SavePagesAsync("input.pdf", new[]
     new PdfPageFileOutput(7, "page-0008.webp"),
 }, new PdfImageConversionOptions { Format = PdfImageOutputFormat.Webp });
 ```
+
+For a large raw-bitmap batch, stream results instead of retaining the full list:
+
+```csharp
+await foreach (var page in orchestrator.RenderPagesStreamAsync(
+                   "input.pdf",
+                   new[] { 0, 3, 7 },
+                   cancellationToken: cancellationToken))
+{
+    // Position identifies this item in the request, including duplicate page indexes.
+    await ProcessBitmapAsync(page.Position, page.PageIndex, page.Bitmap, cancellationToken);
+}
+```
+
+`RenderPagesStreamAsync` supports path, `byte[]`, and `Stream` inputs and yields caller-owned `PdfPageBitmap` values in
+request order. The orchestrator keeps a capacity-one channel of completed pages between its pipe reader and the
+consumer. This applies consumer backpressure and avoids retaining every page, although the current page's pixel array,
+one buffered result, and any bitmap still retained by the caller can coexist. Consume or release each bitmap promptly
+to preserve the bounded-memory benefit.
+
+The cancellation token controls queue admission and the entire enumeration. Ending enumeration early also aborts the
+request. If the request is already active, either action kills and replaces that worker because unread frames from a
+partially consumed batch would otherwise make its persistent pipe unsafe to reuse. A request canceled while queued is
+removed without replacing a worker. The request is not retried. Enumeration does not complete until any required abort
+and replacement attempt have finished, so a subsequent request never receives stale batch frames.
 
 A batch occupies one worker until it finishes and pages within that batch are sequential. For a large export, split
 the page list into moderate batches and submit those batches together; separate workers can then run them in parallel
@@ -149,7 +182,8 @@ The stable `Resource` values are `input bytes`, `bitmap bytes`, and `output byte
 `CompleteAsync()` stops accepting submissions, drains accepted work, and shuts workers down. `CancelAsync()` cancels
 queued work, waits for active uninterruptible work, and stops workers. `Dispose()` and `DisposeAsync()` follow the
 cancellation path; prefer asynchronous disposal when the calling lifetime supports it. Do not create an orchestrator
-per request.
+per request. Graceful completion also waits for accepted streaming enumerations; consumers must keep reading, cancel,
+or dispose an unfinished enumerator.
 
 ### .NET hosting and health checks
 
@@ -167,10 +201,11 @@ builder.Services.AddPdfiumRasterOrchestrator(options =>
 
 The extension registers one `PdfRenderOrchestrator` singleton and one internal `IHostedService`. The host's
 `ILoggerFactory` is assigned before the configuration callback runs, so an application can still replace it in the
-callback. Workers start when the host resolves hosted services. Normal shutdown calls `CompleteAsync()` to drain
-accepted work; if the host shutdown token is canceled, the integration switches to `CancelAsync()` so queued work is
-canceled. Repeated registration calls retain the first singleton configuration and do not duplicate the hosted
-service.
+callback. The hosted service asynchronously starts and handshakes all workers from `IHostedService.StartAsync`; the
+host startup token cancels partial startup. Requests made after singleton resolution but before host startup finishes
+are rejected. Normal shutdown calls `CompleteAsync()` to drain accepted work; if the host shutdown token is canceled,
+the integration switches to `CancelAsync()` so queued work is canceled. Repeated registration calls retain the first
+singleton configuration and do not duplicate the hosted service.
 
 Add the optional readiness check and map it in ASP.NET Core:
 
@@ -186,7 +221,7 @@ The default health-check name is `pdfiumraster-orchestrator`; the name, exceptio
 configurable. Its status is:
 
 - `Healthy` when the orchestrator accepts requests and every configured worker is available.
-- `Degraded` while one or more workers are unavailable or being replaced, including a transient zero-worker period.
+- `Degraded` during initial hosted startup or while one or more workers are unavailable or being replaced.
 - `Unhealthy` after a terminal worker failure or when completion, cancellation, or disposal starts.
 
 The check reads in-memory lifecycle state. It does not render a document, write files, communicate over the worker

@@ -13,7 +13,7 @@ dotnet run --project samples/ParallelPageExport -- input.pdf ./pages
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
 
-using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
 {
     WorkerCount = Math.Min(Environment.ProcessorCount, 4),
     QueueCapacity = 64,
@@ -35,6 +35,25 @@ await orchestrator.CompleteAsync();
 
 Each 16-page batch opens the PDF once; multiple batches can run on separate workers. Tune the batch size for document
 complexity, memory limits, and the desired balance between reuse and parallelism.
+
+## Streaming bitmap batches
+
+When the caller needs raw bitmaps rather than worker-encoded files, stream a batch to avoid retaining every page until
+the last render finishes:
+
+```csharp
+await foreach (var page in orchestrator.RenderPagesStreamAsync(
+                   "input.pdf",
+                   Enumerable.Range(0, pageCount).ToArray(),
+                   cancellationToken: cancellationToken))
+{
+    Console.WriteLine($"{page.PageIndex}: {page.Bitmap.Width}x{page.Bitmap.Height}");
+    await ProcessBitmapAsync(page.Bitmap, cancellationToken);
+}
+```
+
+Results preserve request order and the completed-result buffer has capacity one. Stop enumeration only when you intend
+to abort the rest of the batch; the orchestrator replaces that worker before later work uses the slot.
 
 ## ASP.NET Core lifecycle and observability
 

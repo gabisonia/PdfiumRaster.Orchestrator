@@ -3,6 +3,26 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.0 - 2026-08-02
+
+### Added
+
+- Add cancellable asynchronous worker startup through `PdfRenderOrchestrator.CreateAsync`; .NET hosting now performs
+  the same startup asynchronously as part of host startup.
+- Add `RenderPagesStreamAsync` for path, byte-array, and stream inputs, yielding ordered `PdfPageBitmap` results with
+  capacity-one consumer backpressure instead of retaining every rendered bitmap until the batch completes.
+
+### Changed
+
+- Report readiness as degraded while hosted workers are still starting.
+- Abort an unfinished streaming request and replace its worker when enumeration ends early, preserving private
+  protocol alignment for subsequent requests.
+
+### Documentation
+
+- Document asynchronous creation, streaming memory and ownership behavior, cancellation, early-exit replacement, and
+  hosted startup readiness semantics.
+
 ## 0.7.0 - 2026-08-02
 
 ### Added

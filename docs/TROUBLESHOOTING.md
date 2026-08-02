@@ -4,6 +4,10 @@ This guide covers worker startup, local named-pipe communication, crashes, timeo
 diagnostic collection. Workers are trusted local child processes running with the application's operating-system
 identity; they are not remote services or a security sandbox.
 
+For asynchronous application startup, prefer `PdfRenderOrchestrator.CreateAsync` and pass the application's startup
+token. Generic Host and ASP.NET Core integration already use cancellable asynchronous startup. The readiness check is
+degraded until all workers finish connecting and handshaking.
+
 ## Quick triage
 
 | Symptom | First checks |

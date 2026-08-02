@@ -20,8 +20,8 @@ public static class PdfiumRasterOrchestratorServiceCollectionExtensions
     /// <param name="services">The application service collection.</param>
     /// <returns>The same service collection so that additional registrations can be chained.</returns>
     /// <remarks>
-    /// The orchestrator uses the host's <see cref="ILoggerFactory" /> when one is registered. Workers start when the
-    /// host resolves its hosted services, accepted work drains during normal host shutdown, and queued work is
+    /// The orchestrator uses the host's <see cref="ILoggerFactory" /> when one is registered. Workers start
+    /// asynchronously during host startup, accepted work drains during normal host shutdown, and queued work is
     /// canceled if the host shutdown token is canceled.
     /// </remarks>
     public static IServiceCollection AddPdfiumRasterOrchestrator(this IServiceCollection services)
@@ -63,7 +63,7 @@ public static class PdfiumRasterOrchestratorServiceCollectionExtensions
                     Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
             };
             configure(options);
-            return new PdfRenderOrchestrator(options);
+            return PdfRenderOrchestrator.CreateForHost(options);
         });
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, PdfiumRasterOrchestratorHostedService>());
@@ -82,9 +82,9 @@ public static class PdfiumRasterOrchestratorServiceCollectionExtensions
     /// <param name="tags">Optional tags used to select the check for an endpoint.</param>
     /// <returns>The same health-check builder so that additional checks can be chained.</returns>
     /// <remarks>
-    /// The check is healthy when all workers are available, degraded while a worker is unavailable or being
-    /// replaced, and unhealthy after a terminal failure or after shutdown starts. It inspects in-memory state and
-    /// never renders a document or starts a separate probe worker.
+    /// The check is healthy when all workers are available, degraded during initial hosted startup or while a worker
+    /// is unavailable or being replaced, and unhealthy after a terminal failure or after shutdown starts. It inspects
+    /// in-memory state and never renders a document or starts a separate probe worker.
     /// </remarks>
     public static IHealthChecksBuilder AddPdfiumRasterOrchestrator(
         this IHealthChecksBuilder builder,

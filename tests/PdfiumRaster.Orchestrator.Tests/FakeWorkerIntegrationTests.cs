@@ -61,6 +61,18 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsyncCancelsWorkerStartupAndHandshake()
+    {
+        SetMode("hang-before-connect");
+        var options = CreateOptions();
+        options.WorkerStartupTimeout = TimeSpan.FromSeconds(10);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => PdfRenderOrchestrator.CreateAsync(options, cancellation.Token));
+    }
+
+    [Fact]
     public async Task MidFrameDisconnectIsReportedAsWorkerCrash()
     {
         SetMode("disconnect-mid-frame");

@@ -48,6 +48,9 @@ public sealed class HostingIntegrationTests : IDisposable
         Assert.Equal(0, secondConfigurationCalls);
         Assert.True(loggerFactory.CreateLoggerCalls > 0);
 
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => first.RenderPageAsync(GetAssetPath("smoke.pdf"), 0));
+
         await hostedService.StartAsync(CancellationToken.None);
         await hostedService.StopAsync(CancellationToken.None);
     }
@@ -65,6 +68,7 @@ public sealed class HostingIntegrationTests : IDisposable
         await using var serviceProvider = services.BuildServiceProvider();
         var hostedService = serviceProvider.GetServices<IHostedService>().Single();
         var orchestrator = serviceProvider.GetRequiredService<PdfRenderOrchestrator>();
+        await hostedService.StartAsync(CancellationToken.None);
         var rendering = orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0);
 
         await hostedService.StopAsync(CancellationToken.None);
@@ -88,6 +92,7 @@ public sealed class HostingIntegrationTests : IDisposable
         await using var serviceProvider = services.BuildServiceProvider();
         var hostedService = serviceProvider.GetServices<IHostedService>().Single();
         var orchestrator = serviceProvider.GetRequiredService<PdfRenderOrchestrator>();
+        await hostedService.StartAsync(CancellationToken.None);
         using var blockingInput = new BlockingReadStream(await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf")));
         var active = orchestrator.RenderPageAsync(blockingInput, 0, leaveOpen: true);
         await blockingInput.WaitUntilReadAsync();
@@ -115,6 +120,15 @@ public sealed class HostingIntegrationTests : IDisposable
 
         await using var serviceProvider = services.BuildServiceProvider();
         var healthChecks = serviceProvider.GetRequiredService<HealthCheckService>();
+        var starting = await healthChecks.CheckHealthAsync();
+
+        Assert.Equal(HealthStatus.Degraded, starting.Status);
+        Assert.Contains("starting", starting.Entries["pdfiumraster-orchestrator"].Description);
+
+        await serviceProvider.GetServices<IHostedService>()
+            .OfType<PdfiumRasterOrchestratorHostedService>()
+            .Single()
+            .StartAsync(CancellationToken.None);
         var healthy = await healthChecks.CheckHealthAsync();
         var healthyEntry = healthy.Entries["pdfiumraster-orchestrator"];
 

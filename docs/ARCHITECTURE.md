@@ -69,6 +69,11 @@ Connection and handshake must complete within `WorkerStartupTimeout`, which defa
 exit, timeout, wrong first message, incompatible protocol version, or token mismatch fails startup with
 `PdfWorkerStartupException`, and the incomplete process and pipe are cleaned up.
 
+`PdfRenderOrchestrator.CreateAsync` starts every slot concurrently and allows the caller to cancel process connection
+and handshake. The synchronous constructor preserves its original ready-on-return contract by waiting for the same
+startup path. Hosting creates a deferred singleton and awaits that path from `IHostedService.StartAsync`, so readiness
+is degraded and request admission remains closed until every worker is ready.
+
 ## Private framed protocol
 
 The named pipe is a byte stream, so application messages need their own boundaries. Every frame contains:
@@ -111,6 +116,12 @@ worker opens one `PdfRenderSession` for the request, so a batch transfers and pa
 session render buffer. Pages inside a batch are sequential. Independent batches remain independent queue items and can
 run on separate workers.
 
+For `RenderPagesAsync`, the orchestrator collects every completed bitmap and completes the task with the full list.
+For `RenderPagesStreamAsync`, it publishes completed `PdfPageBitmap` values to a capacity-one channel. The pipe reader
+waits when that channel is full, propagating consumer backpressure across the application/worker boundary without a
+protocol change. Memory can include the bitmap currently being assembled, one completed buffered bitmap, and any
+caller-retained results; it does not inherently grow with the total requested page count.
+
 Input behavior depends on the source type:
 
 | PDF input | Pipe traffic | Worker behavior |
@@ -128,7 +139,7 @@ Output behavior depends on the requested target:
 
 | Output | Pipe traffic and memory behavior |
 | --- | --- |
-| `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, and returns a caller-owned `PdfBitmap`. |
+| `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, and returns a caller-owned `PdfBitmap`. A streaming batch wraps each result with its request position and page index and uses a capacity-one handoff. |
 | Image path | The output path crosses in the request. The worker encodes to a uniquely named temporary file beside the destination, enforces the aggregate limit, and atomically replaces the destination; encoded bytes do not return through the pipe. A batch repeats this per mapped page. |
 | Output `Stream` | The worker encodes into a pipe-backed stream. Chunked encoded bytes return through the pipe and the orchestrator writes them to the caller-owned stream. The orchestrator never closes that output stream. |
 
@@ -142,6 +153,11 @@ while up to `WorkerCount` requests can perform native work concurrently across i
 one worker for its full duration. `PdfRenderQueueFullMode.Wait` applies
 asynchronous backpressure, while `PdfRenderQueueFullMode.Reject` rejects excess work. Failed requests are never
 automatically retried because a retry could repeat expensive work or duplicate an external write.
+
+A streaming batch continues to occupy its worker while its consumer is paused. Ending enumeration or canceling its
+token interrupts pipe reading, kills the worker, and waits for replacement before the enumerator finishes. Discarding
+the remaining private-protocol frames is necessary because a persistent pipe cannot be realigned reliably after a
+partially consumed response.
 
 ## Timeouts, failures, and replacement
 
@@ -168,9 +184,11 @@ Failure handling distinguishes these cases:
 - Replacement attempts use the snapshotted `WorkerRestartDelays` sequence. If every attempt fails, the orchestrator
   enters a terminal faulted state and stops accepting work.
 
-`CompleteAsync()` stops admission, drains accepted work, sends `Shutdown`, and waits for worker exits. `CancelAsync()`
-and `Dispose()` cancel queued work, wait for active uninterruptible cleanup, and stop the workers. If a worker does not
-exit after a graceful shutdown request, the orchestrator kills it.
+`CompleteAsync()` stops admission, drains accepted work, sends `Shutdown`, and waits for worker exits. An accepted
+streaming batch must therefore be consumed or explicitly ended; its bounded result channel deliberately prevents an
+unattended consumer from allowing unbounded buffering. `CancelAsync()` and `Dispose()` cancel queued and streaming
+work, wait for active uninterruptible cleanup, and stop the workers. If a worker does not exit after a graceful
+shutdown request, the orchestrator kills it.
 
 ## Trust and security boundary
 
@@ -209,7 +227,7 @@ process ID; failures include only the managed exception type. Request and proces
 metric tags. This keeps the transport private while allowing queue delay, execution time, crashes, timeouts, worker
 availability, and replacement activity to be observed with standard .NET and OpenTelemetry tooling.
 
-The optional .NET health-check integration reads the same in-memory admission, terminal-failure, and worker-connection
-state. It reports degraded while any worker slot is disconnected during replacement and unhealthy after admission
-closes or a terminal failure occurs. The check does not add protocol messages, render a probe document, access input
-paths, or create a separate worker process.
+The optional .NET health-check integration reads the same in-memory admission, startup, terminal-failure, and
+worker-connection state. It reports degraded during initial hosted startup or while any worker slot is disconnected
+during replacement, and unhealthy after admission closes or a terminal failure occurs. The check does not add
+protocol messages, render a probe document, access input paths, or create a separate worker process.

@@ -71,13 +71,13 @@ See [worker package choices](docs/API.md#worker-package-choices) for every suppo
 > `ILoggerFactory` is supplied. See the complete
 > [default options table](docs/API.md#default-options).
 
-The following example customizes the timeout and resource limits:
+The following example uses cancellable asynchronous startup and customizes the timeout and resource limits:
 
 ```csharp
 using PdfiumRaster;
 using PdfiumRaster.Orchestration;
 
-using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
 {
     WorkerCount = Math.Min(Environment.ProcessorCount, 4),
     QueueCapacity = 42,
@@ -98,14 +98,19 @@ await Task.WhenAll(first, second);
 await orchestrator.CompleteAsync();
 ```
 
+`CreateAsync` is recommended when the application already has an asynchronous startup path because worker process
+connection and handshake do not block that thread and can be canceled. The constructor remains available and returns
+only after all workers are ready. Generic Host and ASP.NET Core integration starts workers asynchronously for you.
+
 Page indexes are zero-based. Path, byte-array, and stream inputs are supported, along with raw `PdfBitmap`, image-path,
 and caller-owned stream outputs. Input streams are read from their current position. Unless `leaveOpen: true` is used,
 the orchestrator owns and disposes an input stream after completion, cancellation, validation failure, or queue
-rejection. Output streams always remain caller-owned.
+rejection. Streaming batches are lazy, so their validation, submission, and stream ownership begin with enumeration;
+an enumerable that is never started does not take ownership. Output streams always remain caller-owned.
 
-For several pages from the same document, use `RenderPagesAsync` or `SavePagesAsync`. One batch is one scheduled
-request: its worker transfers and opens the PDF once, reuses a `PdfRenderSession`, and processes pages in the supplied
-order. Split very large exports into several batches to use multiple workers concurrently.
+For several pages from the same document, use `RenderPagesAsync`, `RenderPagesStreamAsync`, or `SavePagesAsync`. One
+batch is one scheduled request: its worker transfers and opens the PDF once, reuses a `PdfRenderSession`, and processes
+pages in the supplied order. Split very large exports into several batches to use multiple workers concurrently.
 
 ```csharp
 var pages = await orchestrator.RenderPagesAsync("report.pdf", new[] { 0, 1, 2 });
@@ -116,6 +121,25 @@ await orchestrator.SavePagesAsync("report.pdf", new[]
     new PdfPageFileOutput(1, "page-2.png"),
 });
 ```
+
+> [!IMPORTANT]
+> `RenderPagesAsync` retains every returned bitmap until the complete batch is ready. For large bitmap batches, prefer
+> `RenderPagesStreamAsync`: it yields `PdfPageBitmap` values in request order and buffers at most one completed page
+> between the worker reader and your consumer.
+
+```csharp
+await foreach (var page in orchestrator.RenderPagesStreamAsync(
+                   "report.pdf",
+                   new[] { 0, 3, 7 },
+                   cancellationToken: cancellationToken))
+{
+    await ProcessBitmapAsync(page.PageIndex, page.Bitmap, cancellationToken);
+}
+```
+
+Each yielded bitmap is caller-owned. Consume or release it before requesting the next item to keep memory bounded.
+Cancellation or ending enumeration early aborts that batch. If it is already active, its worker is replaced because
+unread private-protocol frames cannot safely be reused. The failed or abandoned batch is not retried.
 
 Workers run locally with the same operating-system identity and filesystem permissions as the calling application.
 They isolate PDFium crashes and make hard timeouts possible, but they are not a security sandbox. Prefer path inputs for
@@ -133,7 +157,8 @@ orchestrator disposal even though the request task has already timed out.
 The queue is bounded. `PdfRenderQueueFullMode.Wait` applies asynchronous backpressure;
 `PdfRenderQueueFullMode.Reject` faults a rejected submission with `PdfRenderQueueFullException`. `CompleteAsync()`
 drains accepted work, while `CancelAsync()`, `Dispose()`, and `DisposeAsync()` cancel queued work and wait for active
-uninterruptible work before stopping the workers.
+uninterruptible work before stopping the workers. A streaming consumer must continue reading, cancel, or dispose its
+enumerator; graceful completion waits for accepted streams just as it waits for other accepted requests.
 
 ## Observability
 
@@ -156,8 +181,8 @@ but never PDF or image paths, passwords, pipe data, worker standard error, or do
 
 > [!IMPORTANT]
 > In a .NET Generic Host or ASP.NET Core application, use `AddPdfiumRasterOrchestrator`. It registers exactly one
-> orchestrator, automatically supplies the host logger factory, starts the workers with the host, and handles graceful
-> shutdown. Do not create an orchestrator per request or add a second manual singleton.
+> orchestrator, automatically supplies the host logger factory, starts the workers asynchronously with the host, and
+> handles graceful shutdown. Do not create an orchestrator per request or add a second manual singleton.
 
 Register the orchestrator and its readiness check:
 
@@ -180,11 +205,11 @@ var app = builder.Build();
 app.MapHealthChecks("/health/ready");
 ```
 
-The readiness check is healthy when all workers are available, degraded during worker replacement, and unhealthy
-after a terminal failure or once shutdown begins. It inspects in-memory state and does not render a probe PDF. Each
-application replica owns its own singleton, so total worker processes equal the worker count multiplied by the number
-of replicas. See the [hosting and health-check guide](docs/API.md#net-hosting-and-health-checks) for registration
-options and shutdown semantics.
+The readiness check is healthy when all workers are available, degraded during initial startup or worker replacement,
+and unhealthy after a terminal failure or once shutdown begins. It inspects in-memory state and does not render a
+probe PDF. Each application replica owns its own singleton, so total worker processes equal the worker count multiplied
+by the number of replicas. See the [hosting and health-check guide](docs/API.md#net-hosting-and-health-checks) for
+registration options and shutdown semantics.
 
 Worker startup failures throw `PdfWorkerStartupException`. Active crashes and hard timeouts throw
 `PdfWorkerCrashedException` and `PdfWorkerTimeoutException` for the affected request, then start a replacement worker.

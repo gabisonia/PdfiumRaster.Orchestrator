@@ -14,7 +14,7 @@ internal sealed class PdfiumRasterOrchestratorHostedService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        return _orchestrator.StartAsync(cancellationToken);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -50,6 +50,10 @@ internal sealed class PdfiumRasterOrchestratorHealthCheck : IHealthCheck
         {
             PdfRenderOrchestratorHealthState.Healthy => HealthCheckResult.Healthy(
                 "The orchestrator is accepting requests and all workers are available.", data),
+            PdfRenderOrchestratorHealthState.Starting => HealthCheckResult.Degraded(
+                $"The orchestrator is starting with {snapshot.AvailableWorkers} of " +
+                $"{snapshot.TotalWorkers} workers available.",
+                data: data),
             PdfRenderOrchestratorHealthState.Degraded => HealthCheckResult.Degraded(
                 $"The orchestrator is accepting requests with {snapshot.AvailableWorkers} of " +
                 $"{snapshot.TotalWorkers} workers available; worker replacement may be in progress.",
@@ -67,6 +71,7 @@ internal sealed class PdfiumRasterOrchestratorHealthCheck : IHealthCheck
 internal enum PdfRenderOrchestratorHealthState
 {
     Healthy,
+    Starting,
     Degraded,
     Stopped,
     TerminalFailure,

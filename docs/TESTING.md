@@ -21,14 +21,14 @@ failure, ownership, and lifecycle path it introduces.
 
 | Area | Automated coverage |
 | --- | --- |
-| Public rendering API | Every path, `byte[]`, and `Stream` input overload returns a bitmap; batch overloads preserve item count and order. |
+| Public rendering API | Every path, `byte[]`, and `Stream` input overload returns a bitmap; task and streaming batch overloads preserve item count, position, page index, and order. |
 | Public saving API | Every combination of path, `byte[]`, or `Stream` input with path or `Stream` output is executed, including all multi-file batch inputs. |
 | Options and limits | Defaults, valid assignments, invalid ranges, enum validation, copied restart-delay collections, input/bitmap/output byte enforcement, temporary placement, and atomic output preservation. |
-| Ownership | Owned and caller-owned input streams across success, validation failure, cancellation, rejection, and timeout; output streams always remain caller-owned. |
-| Scheduling | Wait-mode backpressure, reject mode, bounded queueing, queued cancellation, and multi-worker concurrency. |
+| Ownership | Owned and caller-owned input streams across success, lazy streaming enumeration, validation failure, cancellation, rejection, and timeout; output streams always remain caller-owned. |
+| Scheduling | Wait-mode backpressure, reject mode, bounded queueing, streaming result backpressure, queued cancellation, and multi-worker concurrency. |
 | Lifetime | Graceful draining, cancellation shutdown, repeated completion, repeated disposal, post-completion rejection, and post-disposal rejection. |
-| Hosting and health | Singleton and hosted-service registration, automatic logging, graceful and canceled host shutdown, async disposal, and healthy, degraded, recovered, stopped, and terminal health states. |
-| Worker failures | Startup exit and timeout, invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, successful replacement, and exhausted replacement attempts. |
+| Hosting and health | Singleton and hosted-service registration, cancellable async startup, pre-start request rejection, automatic logging, graceful and canceled host shutdown, async disposal, and starting, healthy, degraded, recovered, stopped, and terminal health states. |
+| Worker failures | Startup cancellation, exit, and timeout; invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, early-stream-exit replacement, successful replacement, and exhausted replacement attempts. |
 | Exceptions | Public constructors and exposed crash, timeout, remote-error, startup, queue-full, and protocol-error properties. |
 | Pipe protocol | Golden version-two vectors, batch and resource-limit fields, fragmented frames, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |
 | Diagnostics | Stable EventSource identity, level, and payload shape; structured log lifecycle events; correlated request activities; operational metric emission; and sensitive-data exclusion across every signal. |

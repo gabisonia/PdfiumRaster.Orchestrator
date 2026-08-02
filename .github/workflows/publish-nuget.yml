@@ -12,7 +12,7 @@ on:
           - beta
           - stable
       version:
-        description: "Package version. Stable example: 0.7.0. Beta input can be 0.8.0 or 0.8.0-beta.1."
+        description: "Package version. Stable example: 0.8.0. Beta input can be 0.9.0 or 0.9.0-beta.1."
         required: true
         type: string
       nuget_user:
@@ -49,7 +49,7 @@ jobs:
 
           if [[ "$channel" == "stable" ]]; then
             if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Stable releases require a SemVer version such as 0.7.0." >&2
+              echo "Stable releases require a SemVer version such as 0.8.0." >&2
               exit 1
             fi
             package_version="$input_version"

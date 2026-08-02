@@ -7,7 +7,7 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 0.7.0
+PACKAGE_VERSION ?= 0.8.0
 PACKAGE_ID ?= PdfiumRaster.Orchestrator
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
@@ -129,6 +129,7 @@ smoke-package: $(PACKAGE)
 	set -euo pipefail; \
 	repo="$$(pwd)"; \
 	tmpdir="$$(mktemp -d)"; \
+	export NUGET_PACKAGES="$$tmpdir/nuget-packages"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	dotnet new console -n PdfiumRasterOrchestratorSmoke -o "$$tmpdir/PdfiumRasterOrchestratorSmoke" --framework net10.0 >/dev/null; \
 	cd "$$tmpdir/PdfiumRasterOrchestratorSmoke"; \
@@ -147,15 +148,24 @@ smoke-package: $(PACKAGE)
 		'using PdfiumRaster;' \
 		'using PdfiumRaster.Orchestration;' \
 		'' \
-		'using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions { WorkerCount = 1 });' \
+		'await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions { WorkerCount = 1 });' \
 		'await orchestrator.SavePageAsync("input.pdf", pageIndex: 0, "page.png", new PdfImageConversionOptions' \
 		'{' \
 		'    Render = PdfPageRenderOptions.ScreenPreview,' \
 		'    Format = PdfImageOutputFormat.Png,' \
 		'});' \
+		'var streamedPages = 0;' \
+		'await foreach (var page in orchestrator.RenderPagesStreamAsync("input.pdf", new[] { 0 }))' \
+		'{' \
+		'    if (page.Position != 0 || page.PageIndex != 0 || page.Bitmap.Pixels.Length == 0)' \
+		'    {' \
+		'        throw new InvalidOperationException("Streaming smoke test returned an invalid page.");' \
+		'    }' \
+		'    streamedPages++;' \
+		'}' \
 		'await orchestrator.CompleteAsync();' \
 		'' \
-		'if (!File.Exists("page.png") || new FileInfo("page.png").Length == 0)' \
+		'if (streamedPages != 1 || !File.Exists("page.png") || new FileInfo("page.png").Length == 0)' \
 		'{' \
 		'    throw new InvalidOperationException("Smoke test did not generate page.png.");' \
 		'}' > Program.cs; \

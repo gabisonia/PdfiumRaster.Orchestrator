@@ -11,7 +11,7 @@ var pdfPath = Path.GetFullPath(args[0]);
 var outputDirectory = Path.GetFullPath(args.Length == 2 ? args[1] : "pages");
 Directory.CreateDirectory(outputDirectory);
 
-using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
 {
     WorkerCount = Math.Min(Environment.ProcessorCount, 4),
     QueueCapacity = 64,
