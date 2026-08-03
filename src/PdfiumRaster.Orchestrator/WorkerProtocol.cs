@@ -18,6 +18,15 @@ internal enum WorkerMessage : byte
     Error = 9,
     Shutdown = 10,
     ResourceLimit = 11,
+    PageCount = 12,
+    PageSize = 13,
+}
+
+internal enum WorkerOperationKind : byte
+{
+    Render = 1,
+    GetPageCount = 2,
+    GetPageSizes = 3,
 }
 
 internal enum WorkerSourceKind : byte
@@ -49,6 +58,7 @@ internal sealed class WorkerRequest
 {
     internal WorkerSourceKind SourceKind { get; set; }
     internal string? SourcePath { get; set; }
+    internal WorkerOperationKind OperationKind { get; set; } = WorkerOperationKind.Render;
     internal WorkerOutputKind OutputKind { get; set; }
     internal string? OutputPath { get; set; }
     internal int PageIndex { get; set; }
@@ -63,7 +73,7 @@ internal sealed class WorkerRequest
 
 internal static class WorkerProtocol
 {
-    internal const int Version = 2;
+    internal const int Version = 3;
     internal const int ChunkSize = 64 * 1024;
     internal const int MaximumControlPayload = 1024 * 1024;
     internal const PipeOptions LocalPipeOptions = PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
@@ -189,6 +199,7 @@ internal static class WorkerProtocol
         {
             writer.Write((byte)request.SourceKind);
             WriteNullableString(writer, request.SourcePath);
+            writer.Write((byte)request.OperationKind);
             writer.Write((byte)request.OutputKind);
             WriteNullableString(writer, request.OutputPath);
             writer.Write(request.PageIndex);
@@ -220,6 +231,7 @@ internal static class WorkerProtocol
             {
                 SourceKind = (WorkerSourceKind)reader.ReadByte(),
                 SourcePath = ReadNullableString(reader),
+                OperationKind = (WorkerOperationKind)reader.ReadByte(),
                 OutputKind = (WorkerOutputKind)reader.ReadByte(),
                 OutputPath = ReadNullableString(reader),
                 PageIndex = reader.ReadInt32(),
@@ -234,9 +246,11 @@ internal static class WorkerProtocol
             request.MaximumOutputBytes = ReadNullableInt64(reader);
 
             if (!Enum.IsDefined(typeof(WorkerSourceKind), request.SourceKind) ||
+                !Enum.IsDefined(typeof(WorkerOperationKind), request.OperationKind) ||
                 !Enum.IsDefined(typeof(WorkerOutputKind), request.OutputKind))
             {
-                throw new PdfWorkerProtocolException("The worker request contains an unknown source or output kind.");
+                throw new PdfWorkerProtocolException(
+                    "The worker request contains an unknown source, operation, or output kind.");
             }
 
             return request;
@@ -258,6 +272,30 @@ internal static class WorkerProtocol
     {
         return Deserialize(payload,
             reader => (reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32()));
+    }
+
+    internal static byte[] SerializePageCount(int pageCount)
+    {
+        return Serialize(writer => writer.Write(pageCount));
+    }
+
+    internal static int DeserializePageCount(byte[] payload)
+    {
+        return Deserialize(payload, reader => reader.ReadInt32());
+    }
+
+    internal static byte[] SerializePageSize(PdfPageSize pageSize)
+    {
+        return Serialize(writer =>
+        {
+            writer.Write(pageSize.Width);
+            writer.Write(pageSize.Height);
+        });
+    }
+
+    internal static PdfPageSize DeserializePageSize(byte[] payload)
+    {
+        return Deserialize(payload, reader => new PdfPageSize(reader.ReadDouble(), reader.ReadDouble()));
     }
 
     internal static byte[] SerializeError(Exception exception)

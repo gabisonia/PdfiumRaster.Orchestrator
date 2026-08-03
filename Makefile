@@ -7,7 +7,7 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 0.8.0
+PACKAGE_VERSION ?= 0.9.0
 PACKAGE_ID ?= PdfiumRaster.Orchestrator
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
@@ -149,6 +149,8 @@ smoke-package: $(PACKAGE)
 		'using PdfiumRaster.Orchestration;' \
 		'' \
 		'await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions { WorkerCount = 1 });' \
+		'var pageCount = await orchestrator.GetPageCountAsync("input.pdf");' \
+		'var pageSizes = await orchestrator.GetPageSizesAsync("input.pdf");' \
 		'await orchestrator.SavePageAsync("input.pdf", pageIndex: 0, "page.png", new PdfImageConversionOptions' \
 		'{' \
 		'    Render = PdfPageRenderOptions.ScreenPreview,' \
@@ -165,7 +167,8 @@ smoke-package: $(PACKAGE)
 		'}' \
 		'await orchestrator.CompleteAsync();' \
 		'' \
-		'if (streamedPages != 1 || !File.Exists("page.png") || new FileInfo("page.png").Length == 0)' \
+		'if (pageCount != 1 || pageSizes.Count != 1 || pageSizes[0].Width <= 0 || pageSizes[0].Height <= 0 ||' \
+		'    streamedPages != 1 || !File.Exists("page.png") || new FileInfo("page.png").Length == 0)' \
 		'{' \
 		'    throw new InvalidOperationException("Smoke test did not generate page.png.");' \
 		'}' > Program.cs; \

@@ -108,6 +108,18 @@ the orchestrator owns and disposes an input stream after completion, cancellatio
 rejection. Streaming batches are lazy, so their validation, submission, and stream ownership begin with enumeration;
 an enumerable that is never started does not take ownership. Output streams always remain caller-owned.
 
+Inspect a document through the same isolated worker pool before deciding what to render. Page sizes are returned in PDF
+points (`1/72` inch) and preserve zero-based page order:
+
+```csharp
+var pageCount = await orchestrator.GetPageCountAsync("report.pdf");
+var pageSizes = await orchestrator.GetPageSizesAsync("report.pdf");
+```
+
+Both APIs also accept `byte[]` and `Stream` inputs, passwords, and cancellation. They follow the same bounded queue,
+input limit, timeout, stream-ownership, crash-isolation, logging, tracing, and metrics behavior as rendering requests;
+PDF parsing remains inside the worker process.
+
 For several pages from the same document, use `RenderPagesAsync`, `RenderPagesStreamAsync`, or `SavePagesAsync`. One
 batch is one scheduled request: its worker transfers and opens the PDF once, reuses a `PdfRenderSession`, and processes
 pages in the supplied order. Split very large exports into several batches to use multiple workers concurrently.

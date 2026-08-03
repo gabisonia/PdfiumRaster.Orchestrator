@@ -14,7 +14,7 @@ internal static class PdfRenderOrchestratorTelemetry
     private static readonly Counter<long> Requests = Meter.CreateCounter<long>(
         "pdfiumraster.orchestrator.requests",
         "{request}",
-        "PDF render requests grouped by terminal outcome.");
+        "PDF orchestration requests grouped by operation and terminal outcome.");
     private static readonly Histogram<double> RequestDuration = Meter.CreateHistogram<double>(
         "pdfiumraster.orchestrator.request.duration",
         "s",
@@ -55,6 +55,8 @@ internal static class PdfRenderOrchestratorTelemetry
             2 => "save",
             3 => "render_batch",
             4 => "save_batch",
+            5 => "get_page_count",
+            6 => "get_page_sizes",
             _ => "unknown",
         };
     }

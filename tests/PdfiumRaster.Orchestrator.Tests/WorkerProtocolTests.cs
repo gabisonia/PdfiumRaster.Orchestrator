@@ -14,10 +14,10 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public async Task VersionTwoHelloFrameMatchesGoldenVector()
+    public async Task VersionThreeHelloFrameMatchesGoldenVector()
     {
-        Assert.Equal(2, WorkerProtocol.Version);
-        var expected = Convert.FromHexString("0B000000010200000005746F6B656E");
+        Assert.Equal(3, WorkerProtocol.Version);
+        var expected = Convert.FromHexString("0B000000010300000005746F6B656E");
         using var stream = new MemoryStream();
 
         await WorkerProtocol.WriteFrameAsync(
@@ -30,10 +30,10 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public void VersionTwoRequestPayloadMatchesGoldenVector()
+    public void VersionThreeRequestPayloadMatchesGoldenVector()
     {
         var expected = Convert.FromHexString(
-            "01010E2F746D702F696E7075742E70646602010F2F746D702F6F75747075742E706E67" +
+            "01010E2F746D702F696E7075742E7064660102010F2F746D702F6F75747075742E706E67" +
             "0300000001067365637265740000000000006240000000000000F83F0100000001000000" +
             "0120030000000001000000302010FF0001000000510000000102000000010000005A" +
             "0000000000000000000000");
@@ -44,7 +44,7 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
-    public void VersionTwoResponsePayloadsMatchGoldenVectors()
+    public void VersionThreeResponsePayloadsMatchGoldenVectors()
     {
         var expectedBitmapHeader = Convert.FromHexString("02000000030000000800000018000000");
         var expectedError = Convert.FromHexString(
@@ -54,6 +54,10 @@ public sealed class WorkerProtocolTests
             expectedBitmapHeader,
             WorkerProtocol.SerializeBitmapHeader(width: 2, height: 3, stride: 8, byteCount: 24));
         Assert.Equal(expectedError, WorkerProtocol.SerializeError(new InvalidOperationException("bad")));
+        Assert.Equal(Convert.FromHexString("03000000"), WorkerProtocol.SerializePageCount(3));
+        Assert.Equal(
+            Convert.FromHexString("00000000008056400000000000C06040"),
+            WorkerProtocol.SerializePageSize(new PdfPageSize(90, 134)));
     }
 
     [Fact]
@@ -87,6 +91,7 @@ public sealed class WorkerProtocolTests
 
         Assert.Equal(request.SourcePath, actual.SourcePath);
         Assert.Equal(request.OutputPath, actual.OutputPath);
+        Assert.Equal(WorkerOperationKind.Render, actual.OperationKind);
         Assert.Equal(3, actual.PageIndex);
         Assert.Equal("secret", actual.Password);
         Assert.Equal(144, actual.Options.Render.Dpi);
@@ -256,6 +261,11 @@ public sealed class WorkerProtocolTests
             () => WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request)));
 
         request.SourceKind = WorkerSourceKind.Path;
+        request.OperationKind = (WorkerOperationKind)byte.MaxValue;
+        Assert.Throws<PdfWorkerProtocolException>(
+            () => WorkerProtocol.DeserializeRequest(WorkerProtocol.SerializeRequest(request)));
+
+        request.OperationKind = WorkerOperationKind.Render;
         var invalidPageCount = WorkerProtocol.SerializeRequest(request);
         BinaryPrimitives.WriteInt32LittleEndian(invalidPageCount.AsSpan(invalidPageCount.Length - 11, 4), -1);
         Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializeRequest(invalidPageCount));
@@ -312,6 +322,13 @@ public sealed class WorkerProtocolTests
             () => WorkerProtocol.DeserializeError(new byte[] { 1 }));
         Assert.Throws<PdfWorkerProtocolException>(
             () => WorkerProtocol.DeserializeResourceLimit(Array.Empty<byte>()));
+        Assert.Equal(3, WorkerProtocol.DeserializePageCount(WorkerProtocol.SerializePageCount(3)));
+        var pageSize = WorkerProtocol.DeserializePageSize(
+            WorkerProtocol.SerializePageSize(new PdfPageSize(90, 134)));
+        Assert.Equal(90, pageSize.Width);
+        Assert.Equal(134, pageSize.Height);
+        Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializePageCount(Array.Empty<byte>()));
+        Assert.Throws<PdfWorkerProtocolException>(() => WorkerProtocol.DeserializePageSize(Array.Empty<byte>()));
     }
 
     [Fact]

@@ -82,6 +82,31 @@ or encoded output produced by one request. `TemporaryDirectory` selects the pare
 directories. `MaximumBatchPages` defaults to 256 and prevents an accidentally enormous batch from monopolizing one
 worker.
 
+## Document inspection
+
+Use the worker-isolated inspection APIs when the application needs document metadata before choosing pages to render:
+
+```csharp
+var pageCount = await orchestrator.GetPageCountAsync("input.pdf");
+var pageSizes = await orchestrator.GetPageSizesAsync("input.pdf");
+
+for (var pageIndex = 0; pageIndex < pageSizes.Count; pageIndex++)
+{
+    var size = pageSizes[pageIndex];
+    Console.WriteLine($"Page {pageIndex}: {size.Width} x {size.Height} points");
+}
+```
+
+`GetPageCountAsync` and `GetPageSizesAsync` each have path, `byte[]`, and `Stream` overloads. Sizes use PDF points
+(`1/72` inch) and the returned list follows zero-based page order. Stream inputs are read from their current position;
+the orchestrator disposes them after success, failure, cancellation, validation failure, or queue rejection unless
+`leaveOpen: true` is passed. Byte arrays remain caller-owned and must not be modified before completion.
+
+Inspection is scheduled through the same bounded worker pool as rendering. It observes `QueueFullMode`,
+`RequestTimeout`, `MaximumInputBytes`, cancellation, worker replacement, and standard diagnostics. It does not render
+pages, so bitmap and encoded-output limits do not apply. Path inputs remain preferable for large documents; byte and
+stream inputs cross the pipe and are spooled by the worker. Failed inspections are not retried automatically.
+
 ## Rendering
 
 Page indexes are zero-based. Path, `byte[]`, and `Stream` PDF inputs are accepted. Prefer paths for large documents.
@@ -255,6 +280,9 @@ Every request also emits an internal activity through
 `PdfRenderOrchestratorDiagnostics.ActivitySourceName`. The activity inherits the caller's `Activity.Current` context,
 covers queueing and execution, and records operation, page count, queue duration, worker index, outcome, and error type
 when applicable. Operational metrics are emitted through `PdfRenderOrchestratorDiagnostics.MeterName`:
+
+The bounded `operation` value is `render`, `save`, `render_batch`, `save_batch`, `get_page_count`, or
+`get_page_sizes`.
 
 | Instrument | Type | Unit | Tags |
 | --- | --- | --- | --- |

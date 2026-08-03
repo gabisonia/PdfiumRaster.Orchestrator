@@ -147,70 +147,105 @@ internal static class Program
                     new FileInfo(pdfPath).Length);
             }
 
-            var pageIndexes = request.PageIndexes.Length == 0
-                ? new[] { request.PageIndex }
-                : request.PageIndexes;
-            if (pageIndexes.Any(pageIndex => pageIndex < 0))
+            if (request.OperationKind == WorkerOperationKind.GetPageCount)
             {
-                throw new PdfWorkerProtocolException("The request contains a negative page index.");
+                using var session = PdfRenderSession.Open(pdfPath, request.Password);
+                await WorkerProtocol.WriteFrameAsync(
+                        pipe,
+                        WorkerMessage.PageCount,
+                        WorkerProtocol.SerializePageCount(session.PageCount),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
             }
-
-            using var session = PdfRenderSession.Open(pdfPath, request.Password);
-
-            switch (request.OutputKind)
+            else if (request.OperationKind == WorkerOperationKind.GetPageSizes)
             {
-                case WorkerOutputKind.Bitmap:
-                    long totalBitmapBytes = 0;
-                    foreach (var pageIndex in pageIndexes)
-                    {
-                        totalBitmapBytes = await RenderBitmapAsync(
-                                pipe,
+                var pageSizes = PdfImageConverter.GetPageSizes(pdfPath, request.Password);
+                await WorkerProtocol.WriteFrameAsync(
+                        pipe,
+                        WorkerMessage.PageCount,
+                        WorkerProtocol.SerializePageCount(pageSizes.Count),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                foreach (var pageSize in pageSizes)
+                {
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageSize,
+                            WorkerProtocol.SerializePageSize(pageSize),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+            }
+            else if (request.OperationKind == WorkerOperationKind.Render)
+            {
+                var pageIndexes = request.PageIndexes.Length == 0
+                    ? new[] { request.PageIndex }
+                    : request.PageIndexes;
+                if (pageIndexes.Any(pageIndex => pageIndex < 0))
+                {
+                    throw new PdfWorkerProtocolException("The request contains a negative page index.");
+                }
+
+                using var session = PdfRenderSession.Open(pdfPath, request.Password);
+                switch (request.OutputKind)
+                {
+                    case WorkerOutputKind.Bitmap:
+                        long totalBitmapBytes = 0;
+                        foreach (var pageIndex in pageIndexes)
+                        {
+                            totalBitmapBytes = await RenderBitmapAsync(
+                                    pipe,
+                                    session,
+                                    pageIndex,
+                                    request,
+                                    totalBitmapBytes)
+                                .ConfigureAwait(false);
+                        }
+
+                        break;
+                    case WorkerOutputKind.Path:
+                        var outputPaths = request.OutputPaths.Length == 0
+                            ? request.OutputPath is null ? Array.Empty<string>() : new[] { request.OutputPath }
+                            : request.OutputPaths;
+                        if (outputPaths.Length != pageIndexes.Length ||
+                            outputPaths.Any(string.IsNullOrWhiteSpace))
+                        {
+                            throw new PdfWorkerProtocolException(
+                                "The request did not provide exactly one output path per page.");
+                        }
+
+                        long totalFileBytes = 0;
+                        for (var index = 0; index < pageIndexes.Length; index++)
+                        {
+                            totalFileBytes = SavePageAtomically(
                                 session,
-                                pageIndex,
-                                request,
-                                totalBitmapBytes)
-                            .ConfigureAwait(false);
-                    }
+                                pageIndexes[index],
+                                outputPaths[index],
+                                request.Options,
+                                request.MaximumOutputBytes,
+                                totalFileBytes);
+                        }
 
-                    break;
-                case WorkerOutputKind.Path:
-                    var outputPaths = request.OutputPaths.Length == 0
-                        ? request.OutputPath is null ? Array.Empty<string>() : new[] { request.OutputPath }
-                        : request.OutputPaths;
-                    if (outputPaths.Length != pageIndexes.Length ||
-                        outputPaths.Any(string.IsNullOrWhiteSpace))
-                    {
-                        throw new PdfWorkerProtocolException(
-                            "The request did not provide exactly one output path per page.");
-                    }
+                        break;
+                    case WorkerOutputKind.Stream:
+                        if (pageIndexes.Length != 1)
+                        {
+                            throw new PdfWorkerProtocolException("Batch stream output is not supported.");
+                        }
 
-                    long totalFileBytes = 0;
-                    for (var index = 0; index < pageIndexes.Length; index++)
-                    {
-                        totalFileBytes = SavePageAtomically(
-                            session,
-                            pageIndexes[index],
-                            outputPaths[index],
-                            request.Options,
-                            request.MaximumOutputBytes,
-                            totalFileBytes);
-                    }
+                        await using (var output = new FramedOutputStream(pipe, request.MaximumOutputBytes))
+                        {
+                            session.SavePage(pageIndexes[0], output, request.Options);
+                        }
 
-                    break;
-                case WorkerOutputKind.Stream:
-                    if (pageIndexes.Length != 1)
-                    {
-                        throw new PdfWorkerProtocolException("Batch stream output is not supported.");
-                    }
-
-                    await using (var output = new FramedOutputStream(pipe, request.MaximumOutputBytes))
-                    {
-                        session.SavePage(pageIndexes[0], output, request.Options);
-                    }
-
-                    break;
-                default:
-                    throw new PdfWorkerProtocolException($"Unsupported output kind {request.OutputKind}.");
+                        break;
+                    default:
+                        throw new PdfWorkerProtocolException($"Unsupported output kind {request.OutputKind}.");
+                }
+            }
+            else
+            {
+                throw new PdfWorkerProtocolException($"Unsupported operation kind {request.OperationKind}.");
             }
 
             await WorkerProtocol.WriteEmptyFrameAsync(pipe, WorkerMessage.Complete, CancellationToken.None)

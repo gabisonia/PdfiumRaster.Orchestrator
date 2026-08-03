@@ -245,6 +245,85 @@ internal static class Program
                             CancellationToken.None)
                         .ConfigureAwait(false);
                     break;
+                case "valid-page-count":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageCount,
+                            WorkerProtocol.SerializePageCount(2),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "valid-page-sizes":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageCount,
+                            WorkerProtocol.SerializePageCount(2),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageSize,
+                            WorkerProtocol.SerializePageSize(new PdfPageSize(612, 792)),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageSize,
+                            WorkerProtocol.SerializePageSize(new PdfPageSize(595, 842)),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "negative-page-count":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageCount,
+                            WorkerProtocol.SerializePageCount(-1),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "missing-page-size":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageCount,
+                            WorkerProtocol.SerializePageCount(2),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageSize,
+                            WorkerProtocol.SerializePageSize(new PdfPageSize(612, 792)),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteEmptyFrameAsync(
+                            pipe,
+                            WorkerMessage.Complete,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
+                case "invalid-page-size":
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageCount,
+                            WorkerProtocol.SerializePageCount(1),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    await WorkerProtocol.WriteFrameAsync(
+                            pipe,
+                            WorkerMessage.PageSize,
+                            WorkerProtocol.SerializePageSize(new PdfPageSize(double.NaN, 792)),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    break;
                 default:
                     await WorkerProtocol.WriteFrameAsync(
                             pipe,

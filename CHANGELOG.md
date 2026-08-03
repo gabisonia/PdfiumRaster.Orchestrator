@@ -3,6 +3,24 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.9.0 - Unreleased
+
+### Added
+
+- Add worker-isolated `GetPageCountAsync` and `GetPageSizesAsync` APIs for path, byte-array, and stream inputs, with
+  password, cancellation, input-limit, timeout, ownership, logging, tracing, and metrics support.
+
+### Changed
+
+- Advance the private worker protocol to version 3 with explicit operation metadata and bounded page-count/page-size
+  response frames.
+- Use worker-isolated page-count inspection in the parallel export sample.
+
+### Documentation
+
+- Document inspection units, overloads, ownership, limits, scheduling, telemetry operation names, protocol sequences,
+  and testing coverage.
+
 ## 0.8.0 - 2026-08-02
 
 ### Added

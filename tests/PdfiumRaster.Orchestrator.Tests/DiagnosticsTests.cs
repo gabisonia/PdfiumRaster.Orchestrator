@@ -94,22 +94,33 @@ public sealed class DiagnosticsTests : IDisposable
         meterListener.RecordObservableInstruments();
 
         await orchestrator.RenderPageAsync(pdfPath, pageIndex: 0, password: password);
+        var pageCount = await orchestrator.GetPageCountAsync(pdfPath, password: password);
         await Assert.ThrowsAsync<PdfWorkerRemoteException>(
             () => orchestrator.RenderPageAsync(missingPdfPath, pageIndex: 0, password: password));
         await orchestrator.CompleteAsync();
         meterListener.RecordObservableInstruments();
         parent.Stop();
 
+        Assert.True(pageCount > 0);
         var requestActivity = Assert.Single(
             activities,
             item =>
                 item.ParentSpanId == parent.SpanId &&
+                Equals(item.GetTagItem("pdfiumraster.orchestrator.operation"), "render") &&
                 Equals(item.GetTagItem("pdfiumraster.orchestrator.outcome"), "success"));
         Assert.Equal("PdfiumRaster.Orchestrator render", requestActivity.DisplayName);
         Assert.Equal(ActivityStatusCode.Unset, requestActivity.Status);
         Assert.Equal("render", requestActivity.GetTagItem("pdfiumraster.orchestrator.operation"));
         Assert.Equal("success", requestActivity.GetTagItem("pdfiumraster.orchestrator.outcome"));
         Assert.Equal(1, requestActivity.GetTagItem("pdfiumraster.orchestrator.page_count"));
+        var inspectionActivity = Assert.Single(
+            activities,
+            item =>
+                item.ParentSpanId == parent.SpanId &&
+                Equals(item.GetTagItem("pdfiumraster.orchestrator.operation"), "get_page_count") &&
+                Equals(item.GetTagItem("pdfiumraster.orchestrator.outcome"), "success"));
+        Assert.Equal("PdfiumRaster.Orchestrator get_page_count", inspectionActivity.DisplayName);
+        Assert.Equal(pageCount, inspectionActivity.GetTagItem("pdfiumraster.orchestrator.page_count"));
         var failedActivity = Assert.Single(
             activities,
             item =>
@@ -134,6 +145,11 @@ public sealed class DiagnosticsTests : IDisposable
             item.Name == "pdfiumraster.orchestrator.requests" &&
             item.Value == 1 &&
             item.Tags.Contains(new KeyValuePair<string, object?>("operation", "render")) &&
+            item.Tags.Contains(new KeyValuePair<string, object?>("outcome", "success")));
+        Assert.Contains(capturedMeasurements, item =>
+            item.Name == "pdfiumraster.orchestrator.requests" &&
+            item.Value == 1 &&
+            item.Tags.Contains(new KeyValuePair<string, object?>("operation", "get_page_count")) &&
             item.Tags.Contains(new KeyValuePair<string, object?>("outcome", "success")));
         Assert.Contains(capturedMeasurements, item =>
             item.Name == "pdfiumraster.orchestrator.request.duration" && item.Value >= 0);

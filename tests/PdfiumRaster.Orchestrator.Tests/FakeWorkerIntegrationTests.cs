@@ -173,6 +173,58 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task FakeWorkerCoversSuccessfulDocumentInspectionResponses()
+    {
+        SetMode("valid-page-count");
+        using (var countOrchestrator = new PdfRenderOrchestrator(CreateOptions()))
+        {
+            Assert.Equal(2, await countOrchestrator.GetPageCountAsync("unused.pdf"));
+            await countOrchestrator.CompleteAsync();
+        }
+
+        SetMode("valid-page-sizes");
+        using var sizesOrchestrator = new PdfRenderOrchestrator(CreateOptions());
+        var sizes = await sizesOrchestrator.GetPageSizesAsync("unused.pdf");
+
+        Assert.Collection(
+            sizes,
+            size =>
+            {
+                Assert.Equal(612, size.Width);
+                Assert.Equal(792, size.Height);
+            },
+            size =>
+            {
+                Assert.Equal(595, size.Width);
+                Assert.Equal(842, size.Height);
+            });
+        await sizesOrchestrator.CompleteAsync();
+    }
+
+    [Theory]
+    [InlineData("negative-page-count", true)]
+    [InlineData("missing-page-size", false)]
+    [InlineData("invalid-page-size", false)]
+    public async Task InvalidDocumentInspectionResponsesAreRejected(string mode, bool pageCountOnly)
+    {
+        SetMode(mode);
+        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+
+        if (pageCountOnly)
+        {
+            await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+                () => orchestrator.GetPageCountAsync("unused.pdf"));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<PdfWorkerProtocolException>(
+                () => orchestrator.GetPageSizesAsync("unused.pdf"));
+        }
+
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
     public async Task RemoteWorkerErrorsExposeTypeAndMessageWithoutReplacingHealthyWorker()
     {
         SetMode("healthy");

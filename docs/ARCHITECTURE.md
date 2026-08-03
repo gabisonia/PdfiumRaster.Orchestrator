@@ -93,9 +93,10 @@ The logical messages are:
 | --- | --- | --- |
 | Worker to orchestrator | `Hello` | Supplies the protocol version and per-process startup token. |
 | Orchestrator to worker | `Ready` | Confirms that the handshake succeeded and requests may begin. |
-| Orchestrator to worker | `Request` | Supplies the source kind, output kind, one or more zero-based page indexes, paths where applicable, password, rendering/encoding options, and optional byte limits. |
+| Orchestrator to worker | `Request` | Supplies the operation kind, source and output kinds, zero or more zero-based page indexes, paths where applicable, password, rendering/encoding options, and optional byte limits. |
 | Orchestrator to worker | `InputChunk`, `InputEnd` | Streams an in-memory or caller-stream PDF to the worker and marks the end of that input. |
 | Worker to orchestrator | `BitmapHeader`, `OutputChunk` | Returns validated bitmap metadata followed by pixels, or streams encoded image bytes to a caller output stream. |
+| Worker to orchestrator | `PageCount`, `PageSize` | Returns an inspected page count and, for a page-size request, one validated width/height pair in PDF points per page. |
 | Worker to orchestrator | `Complete` | Marks successful completion of the current request. |
 | Worker to orchestrator | `Error` | Returns the remote exception type and message for a request that failed without breaking the worker connection. |
 | Worker to orchestrator | `ResourceLimit` | Returns the resource name, configured limit, and observed byte count for an enforced limit. |
@@ -115,6 +116,12 @@ Single-page and multi-page requests share the protocol. A multi-page bitmap resp
 worker opens one `PdfRenderSession` for the request, so a batch transfers and parses the document once and reuses the
 session render buffer. Pages inside a batch are sequential. Independent batches remain independent queue items and can
 run on separate workers.
+
+Document-inspection requests use the same admission, transfer, timeout, and failure path. `GetPageCountAsync` returns
+one `PageCount` frame. `GetPageSizesAsync` returns `PageCount`, then one `PageSize` frame per zero-based page, then
+`Complete`; individual size frames keep control payloads bounded for large documents. The orchestrator rejects
+negative counts, missing or excess size frames, non-positive or non-finite dimensions, and unexpected render output.
+The private protocol is version 3 because operation metadata and these response sequences changed its wire layout.
 
 For `RenderPagesAsync`, the orchestrator collects every completed bitmap and completes the task with the full list.
 For `RenderPagesStreamAsync`, it publishes completed `PdfPageBitmap` values to a capacity-one channel. The pipe reader
@@ -142,6 +149,7 @@ Output behavior depends on the requested target:
 | `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, and returns a caller-owned `PdfBitmap`. A streaming batch wraps each result with its request position and page index and uses a capacity-one handoff. |
 | Image path | The output path crosses in the request. The worker encodes to a uniquely named temporary file beside the destination, enforces the aggregate limit, and atomically replaces the destination; encoded bytes do not return through the pipe. A batch repeats this per mapped page. |
 | Output `Stream` | The worker encodes into a pipe-backed stream. Chunked encoded bytes return through the pipe and the orchestrator writes them to the caller-owned stream. The orchestrator never closes that output stream. |
+| Page count/sizes | Only bounded metadata frames return. Sizes are validated and accumulated in zero-based page order; no bitmap or encoded-output bytes are produced. |
 
 ## Scheduling and concurrency
 

@@ -159,7 +159,7 @@ Event IDs and payloads are:
 | ID | Event | Level | Payload | Meaning |
 | ---: | --- | --- | --- | --- |
 | 1 | `OrchestratorStarted` | Informational | `workerCount` (`Int32`), `queueCapacity` (`Int32`) | A new orchestrator started its fixed worker set. |
-| 2 | `RequestSubmitted` | Verbose | `requestId` (`Int64`), `operationKind` (`Int32`) | A request entered submission; operation `1` renders one bitmap, `2` saves one image, `3` renders a bitmap batch, and `4` saves a file batch. |
+| 2 | `RequestSubmitted` | Verbose | `requestId` (`Int64`), `operationKind` (`Int32`) | A request entered submission; operation `1` renders one bitmap, `2` saves one image, `3` renders a bitmap batch, `4` saves a file batch, `5` gets the page count, and `6` gets page sizes. |
 | 3 | `RequestStarted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `submissionDelayMilliseconds` (`Double`) | A zero-based worker slot received the request. Delay is elapsed milliseconds since submission. |
 | 4 | `RequestCompleted` | Informational | `requestId` (`Int64`), `workerIndex` (`Int32`), `executionMilliseconds` (`Double`) | The request completed successfully. Duration starts at worker assignment. |
 | 5 | `RequestFailed` | Warning | `requestId` (`Int64`), `workerIndex` (`Int32`), `exceptionType` (`String`), `executionMilliseconds` (`Double`) | The request failed. The type is the fully qualified managed exception name when available. |
@@ -176,8 +176,8 @@ events by the zero-based `workerIndex`; process IDs can change after replacement
 timestamp and are expressed as elapsed milliseconds, not wall-clock timestamps.
 
 Events never contain PDF or image paths, passwords, pipe names, handshake tokens, standard-error text, or document
-payloads. Request IDs are process-local correlation values and operation kinds are numeric (`1` for bitmap render and
-`2` for save).
+payloads. Request IDs are process-local correlation values and operation kinds are numeric as described in the event
+table above.
 
 Collect the provider from a running process with `dotnet-trace`:
 

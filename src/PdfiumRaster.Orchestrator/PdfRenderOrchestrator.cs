@@ -194,6 +194,112 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Queues a PDF file inspection and returns its page count from an isolated worker.
+    /// </summary>
+    /// <param name="pdfPath">PDF path opened by a local worker.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The number of pages in the document.</returns>
+    public Task<int> GetPageCountAsync(
+        string pdfPath,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageCount(CreatePathSource(pdfPath), password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues a PDF byte-array inspection and returns its page count from an isolated worker.
+    /// </summary>
+    /// <param name="pdfBytes">PDF bytes that must not be modified until completion.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The number of pages in the document.</returns>
+    /// <remarks>The bytes are transferred to a worker in bounded chunks and remain caller-owned.</remarks>
+    public Task<int> GetPageCountAsync(
+        byte[] pdfBytes,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageCount(CreateByteSource(pdfBytes), password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues a PDF stream inspection and returns its page count from an isolated worker.
+    /// </summary>
+    /// <param name="pdfStream">Readable stream that must remain usable and unmodified until completion.</param>
+    /// <param name="leaveOpen">Whether to leave the stream open after completion, cancellation, or rejection.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The number of pages in the document.</returns>
+    /// <remarks>
+    /// The stream is transferred in chunks and spooled to a worker-owned temporary file for random access. Unless
+    /// <paramref name="leaveOpen" /> is <see langword="true" />, the orchestrator assumes ownership when this method is
+    /// called and disposes the stream after completion, cancellation, validation failure, or queue rejection.
+    /// </remarks>
+    public Task<int> GetPageCountAsync(
+        Stream pdfStream,
+        bool leaveOpen = false,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageCount(CreateStreamSource(pdfStream, leaveOpen), password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues a PDF file inspection and returns every page size in PDF points from an isolated worker.
+    /// </summary>
+    /// <param name="pdfPath">PDF path opened by a local worker.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Page sizes in zero-based page order.</returns>
+    public Task<IReadOnlyList<PdfPageSize>> GetPageSizesAsync(
+        string pdfPath,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageSizes(CreatePathSource(pdfPath), password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues a PDF byte-array inspection and returns every page size in PDF points from an isolated worker.
+    /// </summary>
+    /// <param name="pdfBytes">PDF bytes that must not be modified until completion.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Page sizes in zero-based page order.</returns>
+    /// <remarks>The bytes are transferred to a worker in bounded chunks and remain caller-owned.</remarks>
+    public Task<IReadOnlyList<PdfPageSize>> GetPageSizesAsync(
+        byte[] pdfBytes,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageSizes(CreateByteSource(pdfBytes), password, cancellationToken);
+    }
+
+    /// <summary>
+    /// Queues a PDF stream inspection and returns every page size in PDF points from an isolated worker.
+    /// </summary>
+    /// <param name="pdfStream">Readable stream that must remain usable and unmodified until completion.</param>
+    /// <param name="leaveOpen">Whether to leave the stream open after completion, cancellation, or rejection.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>Page sizes in zero-based page order.</returns>
+    /// <remarks>
+    /// The stream is transferred in chunks and spooled to a worker-owned temporary file for random access. Unless
+    /// <paramref name="leaveOpen" /> is <see langword="true" />, the orchestrator assumes ownership when this method is
+    /// called and disposes the stream after completion, cancellation, validation failure, or queue rejection.
+    /// </remarks>
+    public Task<IReadOnlyList<PdfPageSize>> GetPageSizesAsync(
+        Stream pdfStream,
+        bool leaveOpen = false,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return SubmitPageSizes(CreateStreamSource(pdfStream, leaveOpen), password, cancellationToken);
+    }
+
+    /// <summary>
     /// Queues a zero-based page from a PDF file and returns an independently owned bitmap.
     /// </summary>
     /// <param name="pdfPath">PDF path opened by a local worker when this request is dispatched.</param>
@@ -710,6 +816,50 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         return new PdfRenderOrchestratorHealthSnapshot(state, availableWorkers, _workers.Length);
     }
 
+    private Task<int> SubmitPageCount(
+        InputSource source,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var job = OrchestrationJob.CreatePageCount(
+                Interlocked.Increment(ref _nextRequestId),
+                source,
+                password,
+                cancellationToken,
+                _maximumInputBytes);
+            return SubmitPageCountAsync(job);
+        }
+        catch
+        {
+            source.Cleanup();
+            throw;
+        }
+    }
+
+    private Task<IReadOnlyList<PdfPageSize>> SubmitPageSizes(
+        InputSource source,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var job = OrchestrationJob.CreatePageSizes(
+                Interlocked.Increment(ref _nextRequestId),
+                source,
+                password,
+                cancellationToken,
+                _maximumInputBytes);
+            return SubmitPageSizesAsync(job);
+        }
+        catch
+        {
+            source.Cleanup();
+            throw;
+        }
+    }
+
     private Task<PdfBitmap> SubmitRender(
         InputSource source,
         int pageIndex,
@@ -894,6 +1044,36 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         }
 
         return await job.BitmapTask.ConfigureAwait(false);
+    }
+
+    private async Task<int> SubmitPageCountAsync(OrchestrationJob job)
+    {
+        try
+        {
+            await EnqueueAsync(job).ConfigureAwait(false);
+        }
+        catch
+        {
+            job.Cleanup();
+            throw;
+        }
+
+        return await job.PageCountTask.ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<PdfPageSize>> SubmitPageSizesAsync(OrchestrationJob job)
+    {
+        try
+        {
+            await EnqueueAsync(job).ConfigureAwait(false);
+        }
+        catch
+        {
+            job.Cleanup();
+            throw;
+        }
+
+        return await job.PageSizesTask.ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<PdfBitmap>> SubmitBitmapsAsync(OrchestrationJob job)
@@ -1237,6 +1417,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         }
         finally
         {
+            activity?.SetTag("pdfiumraster.orchestrator.page_count", job.TelemetryPageCount);
             PdfRenderOrchestratorTelemetry.RequestFinished(
                 activity,
                 job.OperationKind,
@@ -1804,10 +1985,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
     {
         private readonly TaskCompletionSource<PdfBitmap>? _bitmapCompletion;
         private readonly TaskCompletionSource<IReadOnlyList<PdfBitmap>>? _bitmapsCompletion;
+        private readonly TaskCompletionSource<int>? _pageCountCompletion;
+        private readonly TaskCompletionSource<IReadOnlyList<PdfPageSize>>? _pageSizesCompletion;
         private readonly TaskCompletionSource<object?>? _saveCompletion;
         private readonly Channel<PdfPageBitmap>? _streamingResults;
         private readonly CancellationTokenSource? _streamingCancellation;
         private readonly TaskCompletionSource<object?>? _streamingExecutionCompletion;
+        private int? _inspectionPageCount;
+        private IReadOnlyList<PdfPageSize>? _inspectionPageSizes;
         private int _cleaned;
 
         private OrchestrationJob(
@@ -1862,6 +2047,16 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                 _streamingExecutionCompletion = new TaskCompletionSource<object?>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
             }
+            else if (resultKind == 4)
+            {
+                _pageCountCompletion = new TaskCompletionSource<int>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            else if (resultKind == 5)
+            {
+                _pageSizesCompletion = new TaskCompletionSource<IReadOnlyList<PdfPageSize>>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            }
             else
             {
                 _saveCompletion = new TaskCompletionSource<object?>(
@@ -1874,9 +2069,12 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         internal long SubmittedTimestamp { get; }
         internal DateTimeOffset SubmittedAt { get; }
         internal ActivityContext ParentActivityContext { get; }
-        internal int OperationKind => _bitmapCompletion is not null ? 1 :
+        internal int OperationKind => _pageCountCompletion is not null ? 5 :
+            _pageSizesCompletion is not null ? 6 :
+            _bitmapCompletion is not null ? 1 :
             _bitmapsCompletion is not null || _streamingResults is not null ? 3 :
             PageIndexes.Length == 1 ? 2 : 4;
+        internal int TelemetryPageCount => _inspectionPageCount ?? PageIndexes.Length;
         internal OutputTarget Target { get; }
         internal int[] PageIndexes { get; }
         internal PdfImageConversionOptions Options { get; }
@@ -1884,15 +2082,62 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         internal CancellationToken CancellationToken { get; }
         internal Task<PdfBitmap> BitmapTask => _bitmapCompletion!.Task;
         internal Task<IReadOnlyList<PdfBitmap>> BitmapsTask => _bitmapsCompletion!.Task;
+        internal Task<int> PageCountTask => _pageCountCompletion!.Task;
+        internal Task<IReadOnlyList<PdfPageSize>> PageSizesTask => _pageSizesCompletion!.Task;
         internal Task SaveTask => _saveCompletion!.Task;
         internal ChannelReader<PdfPageBitmap> StreamingResults => _streamingResults!.Reader;
         internal Task StreamingExecutionTask => _streamingExecutionCompletion!.Task;
         internal bool IsStreaming => _streamingResults is not null;
+        internal bool IsPageCountInspection => _pageCountCompletion is not null;
+        internal bool IsPageSizesInspection => _pageSizesCompletion is not null;
+        internal bool IsInspection => IsPageCountInspection || IsPageSizesInspection;
         internal bool StreamingCancellationRequested => _streamingCancellation?.IsCancellationRequested == true;
         internal CancellationToken StreamingCancellationToken => _streamingCancellation?.Token ?? CancellationToken.None;
         internal long? MaximumInputBytes { get; }
         internal long? MaximumBitmapBytes { get; }
         internal long? MaximumOutputBytes { get; }
+
+        internal static OrchestrationJob CreatePageCount(
+            long requestId,
+            InputSource source,
+            string? password,
+            CancellationToken cancellationToken,
+            long? maximumInputBytes)
+        {
+            return new OrchestrationJob(
+                requestId,
+                source,
+                new BitmapOutputTarget(),
+                Array.Empty<int>(),
+                new PdfImageConversionOptions(),
+                password,
+                cancellationToken,
+                4,
+                maximumInputBytes,
+                null,
+                null);
+        }
+
+        internal static OrchestrationJob CreatePageSizes(
+            long requestId,
+            InputSource source,
+            string? password,
+            CancellationToken cancellationToken,
+            long? maximumInputBytes)
+        {
+            return new OrchestrationJob(
+                requestId,
+                source,
+                new BitmapOutputTarget(),
+                Array.Empty<int>(),
+                new PdfImageConversionOptions(),
+                password,
+                cancellationToken,
+                5,
+                maximumInputBytes,
+                null,
+                null);
+        }
 
         internal static OrchestrationJob CreateBitmap(
             long requestId,
@@ -2007,9 +2252,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             {
                 SourceKind = Source.Kind,
                 SourcePath = Source.Path,
+                OperationKind = IsPageCountInspection
+                    ? WorkerOperationKind.GetPageCount
+                    : IsPageSizesInspection
+                        ? WorkerOperationKind.GetPageSizes
+                        : WorkerOperationKind.Render,
                 OutputKind = Target.Kind,
                 OutputPath = Target.Path,
-                PageIndex = PageIndexes[0],
+                PageIndex = PageIndexes.Length == 0 ? 0 : PageIndexes[0],
                 PageIndexes = PageIndexes.Length == 1 ? Array.Empty<int>() : PageIndexes,
                 OutputPaths = Target is BatchPathOutputTarget batchTarget
                     ? batchTarget.Paths
@@ -2046,6 +2296,24 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             {
                 _streamingResults.Writer.TryComplete();
             }
+            else if (_pageCountCompletion is not null)
+            {
+                if (!_inspectionPageCount.HasValue)
+                {
+                    throw new PdfWorkerProtocolException("The worker did not return a page count.");
+                }
+
+                _pageCountCompletion.TrySetResult(_inspectionPageCount.Value);
+            }
+            else if (_pageSizesCompletion is not null)
+            {
+                if (_inspectionPageSizes is null)
+                {
+                    throw new PdfWorkerProtocolException("The worker did not return page sizes.");
+                }
+
+                _pageSizesCompletion.TrySetResult(_inspectionPageSizes);
+            }
             else
             {
                 _saveCompletion!.TrySetResult(null);
@@ -2065,6 +2333,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             else if (_streamingResults is not null)
             {
                 _streamingResults.Writer.TryComplete(exception);
+            }
+            else if (_pageCountCompletion is not null)
+            {
+                _pageCountCompletion.TrySetException(exception);
+            }
+            else if (_pageSizesCompletion is not null)
+            {
+                _pageSizesCompletion.TrySetException(exception);
             }
             else
             {
@@ -2086,10 +2362,24 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             {
                 _streamingResults.Writer.TryComplete(new TaskCanceledException("Streaming page rendering was canceled."));
             }
+            else if (_pageCountCompletion is not null)
+            {
+                _pageCountCompletion.TrySetCanceled();
+            }
+            else if (_pageSizesCompletion is not null)
+            {
+                _pageSizesCompletion.TrySetCanceled();
+            }
             else
             {
                 _saveCompletion!.TrySetCanceled();
             }
+        }
+
+        internal void SetInspectionResult(int pageCount, IReadOnlyList<PdfPageSize>? pageSizes)
+        {
+            _inspectionPageCount = pageCount;
+            _inspectionPageSizes = pageSizes;
         }
 
         internal void Cleanup()
@@ -2394,6 +2684,8 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                 long totalOutputBytes = 0;
                 var bitmaps = job.IsStreaming ? null : new List<PdfBitmap>();
                 var bitmapCount = 0;
+                int? inspectedPageCount = null;
+                var inspectedPageSizes = job.IsPageSizesInspection ? new List<PdfPageSize>() : null;
 
                 while (true)
                 {
@@ -2403,7 +2695,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                     {
                         case WorkerMessage.BitmapHeader:
                         {
-                            if (request.OutputKind != WorkerOutputKind.Bitmap)
+                            if (job.IsInspection || request.OutputKind != WorkerOutputKind.Bitmap)
                             {
                                 throw new PdfWorkerProtocolException("The worker sent an unexpected bitmap header.");
                             }
@@ -2482,7 +2774,55 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                             }
 
                             break;
+                        case WorkerMessage.PageCount:
+                            if (!job.IsInspection || inspectedPageCount.HasValue)
+                            {
+                                throw new PdfWorkerProtocolException("The worker sent an unexpected page count.");
+                            }
+
+                            inspectedPageCount = WorkerProtocol.DeserializePageCount(frame.Payload);
+                            if (inspectedPageCount.Value < 0)
+                            {
+                                throw new PdfWorkerProtocolException("The worker returned a negative page count.");
+                            }
+
+                            break;
+                        case WorkerMessage.PageSize:
+                            if (!job.IsPageSizesInspection || !inspectedPageCount.HasValue)
+                            {
+                                throw new PdfWorkerProtocolException("The worker sent an unexpected page size.");
+                            }
+
+                            if (inspectedPageSizes!.Count >= inspectedPageCount.Value)
+                            {
+                                throw new PdfWorkerProtocolException("The worker returned too many page sizes.");
+                            }
+
+                            var pageSize = WorkerProtocol.DeserializePageSize(frame.Payload);
+                            ValidatePageSize(pageSize);
+                            inspectedPageSizes.Add(pageSize);
+                            break;
                         case WorkerMessage.Complete:
+                            if (job.IsInspection)
+                            {
+                                if (!inspectedPageCount.HasValue)
+                                {
+                                    throw new PdfWorkerProtocolException("The worker did not return a page count.");
+                                }
+
+                                if (job.IsPageSizesInspection &&
+                                    inspectedPageSizes!.Count != inspectedPageCount.Value)
+                                {
+                                    throw new PdfWorkerProtocolException(
+                                        "The worker returned an unexpected number of page sizes.");
+                                }
+
+                                job.SetInspectionResult(
+                                    inspectedPageCount.Value,
+                                    inspectedPageSizes?.AsReadOnly());
+                                return null;
+                            }
+
                             if (request.OutputKind == WorkerOutputKind.Bitmap)
                             {
                                 if (bitmapPixels is null || bitmapOffset != bitmapPixels.Length)
@@ -2710,6 +3050,19 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                 byteCount != checked(stride * height))
             {
                 throw new PdfWorkerProtocolException("The worker returned invalid bitmap dimensions.");
+            }
+        }
+
+        private static void ValidatePageSize(PdfPageSize pageSize)
+        {
+            if (pageSize.Width <= 0 ||
+                pageSize.Height <= 0 ||
+                double.IsNaN(pageSize.Width) ||
+                double.IsNaN(pageSize.Height) ||
+                double.IsInfinity(pageSize.Width) ||
+                double.IsInfinity(pageSize.Height))
+            {
+                throw new PdfWorkerProtocolException("The worker returned invalid page dimensions.");
             }
         }
     }
