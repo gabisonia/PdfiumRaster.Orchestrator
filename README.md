@@ -178,7 +178,7 @@ The orchestrator supports the standard .NET observability stack while retaining 
 `EventSource` for `dotnet-trace`. Pass the application's `ILoggerFactory` for structured lifecycle and failure logs:
 
 ```csharp
-var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
 {
     LoggerFactory = loggerFactory,
 });

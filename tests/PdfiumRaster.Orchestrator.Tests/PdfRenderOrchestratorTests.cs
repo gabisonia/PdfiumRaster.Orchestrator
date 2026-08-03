@@ -31,7 +31,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
             ColorMode = PdfImageColorMode.Grayscale,
         };
         var expected = PdfImageConverter.RenderPage(pdfPath, 0, options);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         var actual = await orchestrator.RenderPageAsync(pdfPath, 0, options);
         await orchestrator.CompleteAsync();
@@ -52,7 +52,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
             Format = PdfImageOutputFormat.Png,
             Encoding = PdfImageEncodingOptions.Fast,
         };
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         using var input = new MemoryStream(bytes, writable: false);
         using var output = new MemoryStream();
 
@@ -74,7 +74,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var outputPath = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid() + ".png");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await orchestrator.SavePageAsync(
             GetAssetPath("smoke.pdf"),
@@ -103,7 +103,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
             Format = PdfImageOutputFormat.Png,
         };
         using var stream = new MemoryStream(bytes, writable: false);
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 6,
@@ -155,7 +155,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var pdfPath = GetAssetPath("smoke.pdf");
         var bytes = await File.ReadAllBytesAsync(pdfPath);
-        using var inputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var inputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -170,7 +170,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         Assert.Equal(bytes.Length, inputException.Observed);
         await inputLimited.CompleteAsync();
 
-        using var bitmapLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var bitmapLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -184,7 +184,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var outputPath = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid() + ".png");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         await File.WriteAllBytesAsync(outputPath, new byte[] { 1, 2, 3 });
-        using var outputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var outputLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -203,39 +203,39 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var pdfPath = GetAssetPath("smoke.pdf");
         var bytes = await File.ReadAllBytesAsync(pdfPath);
 
-        using (var pathLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            await using var pathLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
                {
                    WorkerCount = 1,
                    QueueCapacity = 2,
                    MaximumInputBytes = 1,
-               }))
-        {
+               });
             var exception = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
                 () => pathLimited.RenderPageAsync(pdfPath, 0));
             Assert.Equal("input bytes", exception.Resource);
             await pathLimited.CompleteAsync();
         }
 
-        using (var streamLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            await using var streamLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
                {
                    WorkerCount = 1,
                    QueueCapacity = 2,
                    MaximumInputBytes = bytes.Length - 1,
-               }))
-        {
+               });
             using var input = new NonSeekableReadStream(bytes);
             await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
                 () => streamLimited.RenderPageAsync(input, 0, leaveOpen: true));
             await streamLimited.CompleteAsync();
         }
 
-        using (var encodedLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            await using var encodedLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
                {
                    WorkerCount = 1,
                    QueueCapacity = 2,
                    MaximumOutputBytes = 1,
-               }))
-        {
+               });
             using var output = new MemoryStream();
             await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
                 () => encodedLimited.SavePageAsync(pdfPath, 0, output));
@@ -244,13 +244,13 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         }
 
         var oneBitmap = PdfImageConverter.RenderPage(pdfPath, 0);
-        using (var batchLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            await using var batchLimited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
                {
                    WorkerCount = 1,
                    QueueCapacity = 2,
                    MaximumOutputBytes = oneBitmap.Pixels.LongLength + 1,
-               }))
-        {
+               });
             var exception = await Assert.ThrowsAsync<PdfRenderResourceLimitException>(
                 () => batchLimited.RenderPagesAsync(pdfPath, new[] { 0, 0 }));
             Assert.Equal("output bytes", exception.Resource);
@@ -271,7 +271,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var first = Path.Combine(directory, "first.png");
         var second = Path.Combine(directory, "second.png");
         await File.WriteAllBytesAsync(second, new byte[] { 7, 8, 9 });
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -293,7 +293,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     public async Task ConfiguredTemporaryDirectoryContainsAndCleansWorkerDirectory()
     {
         var root = Path.Combine(AppContext.BaseDirectory, "TestOutput", Guid.NewGuid().ToString("N"));
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -311,7 +311,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var input = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator(TimeSpan.FromMilliseconds(100));
+        await using var orchestrator = CreateOrchestrator(TimeSpan.FromMilliseconds(100));
         var workerTemporaryDirectory = GetFirstWorkerTemporaryDirectory(orchestrator);
         var request = orchestrator.RenderPageAsync(input, 0, leaveOpen: true);
         await input.WaitUntilReadAsync();
@@ -329,7 +329,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         var input = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator(TimeSpan.FromMilliseconds(100));
+        await using var orchestrator = CreateOrchestrator(TimeSpan.FromMilliseconds(100));
         var request = orchestrator.RenderPageAsync(input, 0);
         await input.WaitUntilReadAsync();
 
@@ -346,7 +346,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var input = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var request = orchestrator.RenderPageAsync(input, 0, leaveOpen: true);
         await input.WaitUntilReadAsync();
 
@@ -365,7 +365,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var input = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var first = orchestrator.RenderPageAsync(input, 0, leaveOpen: true);
         await input.WaitUntilReadAsync();
         using var cancellation = new CancellationTokenSource();
@@ -393,7 +393,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var barrier = new AsyncReadBarrier(2);
         await using var firstInput = new BarrierReadStream(bytes, barrier);
         await using var secondInput = new BarrierReadStream(bytes, barrier);
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 2,
             QueueCapacity = 2,
@@ -412,7 +412,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var input = new GateReadStream(bytes);
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 1,
@@ -435,7 +435,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var activeInput = new GateReadStream(bytes);
         var rejectedInput = new MemoryStream(bytes, writable: false);
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 1,
@@ -461,7 +461,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var input = new MemoryStream(bytes, writable: false);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => orchestrator.RenderPageAsync(input, 0, cancellationToken: cancellation.Token));
@@ -476,7 +476,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         var ownedInput = new MemoryStream(bytes, writable: false);
         using var callerOwnedInput = new MemoryStream(bytes, writable: false);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => orchestrator.RenderPageAsync(ownedInput, -1));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
@@ -492,7 +492,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var activeInput = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var active = orchestrator.RenderPageAsync(activeInput, 0, leaveOpen: true);
         await activeInput.WaitUntilReadAsync();
         var queued = orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0);
@@ -508,7 +508,7 @@ public sealed class PdfRenderOrchestratorTests : IDisposable
     [Fact]
     public async Task WorkerTemporaryDirectoryIsOwnerOnlyOnUnix()
     {
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var temporaryDirectory = GetFirstWorkerTemporaryDirectory(orchestrator);
 
         if (!OperatingSystem.IsWindows())

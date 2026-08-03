@@ -33,7 +33,7 @@ public sealed class ManualOrchestratorRenderingTests(ITestOutputHelper output)
         var originalWorkerPath = ConfigureWorkerPath();
         try
         {
-            using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+            await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
             {
                 WorkerCount = Math.Min(Environment.ProcessorCount, 4),
                 QueueCapacity = 42,

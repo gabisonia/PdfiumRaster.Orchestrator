@@ -127,7 +127,7 @@ public sealed class StreamingRenderTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         var input = new MemoryStream(bytes, writable: false);
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
         });

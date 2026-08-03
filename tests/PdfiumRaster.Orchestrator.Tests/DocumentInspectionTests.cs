@@ -25,7 +25,7 @@ public sealed class DocumentInspectionTests : IDisposable
         var expectedSizes = PdfImageConverter.GetPageSizes(pdfPath);
         using var countStream = new MemoryStream(bytes, writable: false);
         using var sizesStream = new MemoryStream(bytes, writable: false);
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         var pathCount = await orchestrator.GetPageCountAsync(pdfPath);
         var byteCount = await orchestrator.GetPageCountAsync(bytes);
@@ -54,7 +54,7 @@ public sealed class DocumentInspectionTests : IDisposable
         var canceledStream = new MemoryStream(bytes, writable: false);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await orchestrator.GetPageCountAsync(countStream);
         await orchestrator.GetPageSizesAsync(sizesStream);
@@ -72,7 +72,7 @@ public sealed class DocumentInspectionTests : IDisposable
     {
         var pdfPath = GetAssetPath("smoke.pdf");
         var bytes = await File.ReadAllBytesAsync(pdfPath);
-        using var limited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var limited = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 2,
@@ -89,7 +89,7 @@ public sealed class DocumentInspectionTests : IDisposable
         Assert.Equal("input bytes", pathLimit.Resource);
         await limited.CompleteAsync();
 
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var missingPath = Path.Combine(AppContext.BaseDirectory, $"missing-{Guid.NewGuid():N}.pdf");
         await Assert.ThrowsAsync<PdfWorkerRemoteException>(
             () => orchestrator.GetPageCountAsync(missingPath));
@@ -100,7 +100,7 @@ public sealed class DocumentInspectionTests : IDisposable
     [Fact]
     public async Task InspectionValidatesPublicInputs()
     {
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         Assert.Throws<ArgumentException>(() =>
         {

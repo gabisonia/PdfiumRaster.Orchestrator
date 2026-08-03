@@ -34,7 +34,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
         using var streamPathInput = new MemoryStream(pdfBytes, writable: false);
         using var streamOutputInput = new MemoryStream(pdfBytes, writable: false);
         using var streamOutput = new MemoryStream();
-        using var orchestrator = CreateOrchestrator(queueCapacity: 12);
+        await using var orchestrator = CreateOrchestrator(queueCapacity: 12);
 
         var renderPath = orchestrator.RenderPageAsync(pdfPath, 0, options);
         var renderBytes = orchestrator.RenderPageAsync(pdfBytes, 0, options);
@@ -96,7 +96,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
         var renderInput = new MemoryStream(bytes, writable: false);
         var saveInput = new MemoryStream(bytes, writable: false);
         using var output = new MemoryStream();
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await orchestrator.RenderPageAsync(renderInput, 0);
         await orchestrator.SavePageAsync(saveInput, 0, output);
@@ -111,7 +111,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
     public async Task PublicMethodsValidateEveryInputAndOutputShape()
     {
         var bytes = File.ReadAllBytes(GetAssetPath("smoke.pdf"));
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         using var readable = new MemoryStream(bytes, writable: false);
         using var writable = new MemoryStream();
         var disposedInput = new MemoryStream(bytes, writable: false);
@@ -162,7 +162,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(
             () => orchestrator.SavePagesAsync(bytes, new PdfPageFileOutput[] { null! }));
 
-        using var onePageBatch = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var onePageBatch = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 1,
@@ -181,7 +181,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
         await using var activeInput = new GateReadStream(bytes);
-        using var orchestrator = CreateOrchestrator(queueCapacity: 1);
+        await using var orchestrator = CreateOrchestrator(queueCapacity: 1);
         var active = orchestrator.RenderPageAsync(activeInput, 0, leaveOpen: true);
         await activeInput.WaitUntilReadAsync();
         var queued = orchestrator.RenderPageAsync(bytes, 0);
@@ -203,7 +203,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
         using var output = new MemoryStream();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => orchestrator.SavePageAsync(input, 0, output, cancellationToken: cancellation.Token));
@@ -220,7 +220,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
         await using var activeInput = new GateReadStream(bytes);
         var queuedInput = new MemoryStream(bytes, writable: false);
         using var queuedOutput = new MemoryStream();
-        using var orchestrator = CreateOrchestrator(queueCapacity: 1);
+        await using var orchestrator = CreateOrchestrator(queueCapacity: 1);
         var active = orchestrator.RenderPageAsync(activeInput, 0, leaveOpen: true);
         await activeInput.WaitUntilReadAsync();
         var queued = orchestrator.SavePageAsync(queuedInput, 0, queuedOutput);
@@ -238,7 +238,7 @@ public sealed class PdfRenderOrchestratorPublicApiTests : IDisposable
     [Fact]
     public async Task CompleteAsyncDrainsWorkAndRejectsFurtherSubmissions()
     {
-        using var orchestrator = CreateOrchestrator();
+        await using var orchestrator = CreateOrchestrator();
         var accepted = orchestrator.RenderPageAsync(GetAssetPath("smoke.pdf"), 0);
 
         var firstCompletion = orchestrator.CompleteAsync();

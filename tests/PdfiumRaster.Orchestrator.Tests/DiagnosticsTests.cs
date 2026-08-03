@@ -29,7 +29,7 @@ public sealed class DiagnosticsTests : IDisposable
         const string password = "diagnostic-secret-password";
         var pdfPath = Path.Combine(AppContext.BaseDirectory, "TestAssets", "smoke.pdf");
         using var listener = new OrchestratorEventListener();
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 1,
@@ -85,7 +85,7 @@ public sealed class DiagnosticsTests : IDisposable
 
         using var loggerFactory = new CapturingLoggerFactory();
         using var parent = new Activity("diagnostics-test-parent").Start();
-        using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
         {
             WorkerCount = 1,
             QueueCapacity = 1,

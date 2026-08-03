@@ -76,7 +76,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task MidFrameDisconnectIsReportedAsWorkerCrash()
     {
         SetMode("disconnect-mid-frame");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         var exception = await Assert.ThrowsAsync<PdfWorkerCrashedException>(
             () => orchestrator.RenderPageAsync("unused.pdf", pageIndex: 0));
@@ -90,7 +90,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task InvalidBitmapHeaderIsReportedAsProtocolFailure()
     {
         SetMode("invalid-bitmap-header");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         await Assert.ThrowsAsync<PdfWorkerProtocolException>(
             () => orchestrator.RenderPageAsync("unused.pdf", pageIndex: 0));
@@ -101,7 +101,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task BitmapBytesBeyondDeclaredLengthAreRejected()
     {
         SetMode("excess-bitmap-output");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         await Assert.ThrowsAsync<PdfWorkerProtocolException>(
             () => orchestrator.RenderPageAsync("unused.pdf", pageIndex: 0));
@@ -116,7 +116,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task InvalidBitmapResponseSequencesAreRejected(string mode)
     {
         SetMode(mode);
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         await Assert.ThrowsAsync<PdfWorkerProtocolException>(
             () => orchestrator.RenderPageAsync("unused.pdf", pageIndex: 0));
@@ -128,7 +128,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     {
         SetMode("bitmap-header-for-stream");
         using var output = new MemoryStream();
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         await Assert.ThrowsAsync<PdfWorkerProtocolException>(
             () => orchestrator.SavePageAsync("unused.pdf", pageIndex: 0, output));
@@ -139,7 +139,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task OutputBytesForPathTargetAreRejected()
     {
         SetMode("output-for-path");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         await Assert.ThrowsAsync<PdfWorkerProtocolException>(
             () => orchestrator.SavePageAsync("unused.pdf", pageIndex: 0, "unused.png"));
@@ -150,24 +150,24 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task FakeWorkerCoversSuccessfulBitmapStreamAndPathResponses()
     {
         SetMode("valid-bitmap");
-        using (var bitmapOrchestrator = new PdfRenderOrchestrator(CreateOptions()))
         {
+            await using var bitmapOrchestrator = new PdfRenderOrchestrator(CreateOptions());
             var bitmap = await bitmapOrchestrator.RenderPageAsync("unused.pdf", 0);
             Assert.Equal(new byte[] { 1, 2, 3, 4 }, bitmap.Pixels);
             await bitmapOrchestrator.CompleteAsync();
         }
 
         SetMode("valid-stream");
-        using (var output = new MemoryStream())
-        using (var streamOrchestrator = new PdfRenderOrchestrator(CreateOptions()))
         {
+            using var output = new MemoryStream();
+            await using var streamOrchestrator = new PdfRenderOrchestrator(CreateOptions());
             await streamOrchestrator.SavePageAsync("unused.pdf", 0, output);
             Assert.Equal(new byte[] { 1, 2, 3, 4 }, output.ToArray());
             await streamOrchestrator.CompleteAsync();
         }
 
         SetMode("valid-path");
-        using var pathOrchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var pathOrchestrator = new PdfRenderOrchestrator(CreateOptions());
         await pathOrchestrator.SavePageAsync("unused.pdf", 0, "unused.png");
         await pathOrchestrator.CompleteAsync();
     }
@@ -176,14 +176,14 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task FakeWorkerCoversSuccessfulDocumentInspectionResponses()
     {
         SetMode("valid-page-count");
-        using (var countOrchestrator = new PdfRenderOrchestrator(CreateOptions()))
         {
+            await using var countOrchestrator = new PdfRenderOrchestrator(CreateOptions());
             Assert.Equal(2, await countOrchestrator.GetPageCountAsync("unused.pdf"));
             await countOrchestrator.CompleteAsync();
         }
 
         SetMode("valid-page-sizes");
-        using var sizesOrchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var sizesOrchestrator = new PdfRenderOrchestrator(CreateOptions());
         var sizes = await sizesOrchestrator.GetPageSizesAsync("unused.pdf");
 
         Assert.Collection(
@@ -208,7 +208,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task InvalidDocumentInspectionResponsesAreRejected(string mode, bool pageCountOnly)
     {
         SetMode(mode);
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         if (pageCountOnly)
         {
@@ -228,7 +228,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task RemoteWorkerErrorsExposeTypeAndMessageWithoutReplacingHealthyWorker()
     {
         SetMode("healthy");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         var first = await Assert.ThrowsAsync<PdfWorkerRemoteException>(
             () => orchestrator.RenderPageAsync("unused.pdf", 0));
@@ -245,7 +245,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     public async Task CrashExceptionBoundsStandardErrorAndReportsExitCode()
     {
         SetMode("stderr-disconnect");
-        using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
 
         var exception = await Assert.ThrowsAsync<PdfWorkerCrashedException>(
             () => orchestrator.RenderPageAsync("unused.pdf", 0));

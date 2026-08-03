@@ -118,7 +118,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         }
         catch
         {
-            orchestrator.Dispose();
+            await orchestrator.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
