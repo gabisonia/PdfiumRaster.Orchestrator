@@ -88,3 +88,21 @@ PdfiumRaster.Orchestration.PdfRenderOrchestrator.GetPageCountAsync(string! pdfPa
 PdfiumRaster.Orchestration.PdfRenderOrchestrator.GetPageSizesAsync(byte[]! pdfBytes, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<PdfiumRaster.PdfPageSize>!>!
 PdfiumRaster.Orchestration.PdfRenderOrchestrator.GetPageSizesAsync(System.IO.Stream! pdfStream, bool leaveOpen = false, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<PdfiumRaster.PdfPageSize>!>!
 PdfiumRaster.Orchestration.PdfRenderOrchestrator.GetPageSizesAsync(string! pdfPath, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<PdfiumRaster.PdfPageSize>!>!
+PdfiumRaster.Orchestration.PdfDocumentInfo
+PdfiumRaster.Orchestration.PdfDocumentInfo.PageCount.get -> int
+PdfiumRaster.Orchestration.PdfDocumentInfo.PageSizes.get -> System.Collections.Generic.IReadOnlyList<PdfiumRaster.PdfPageSize>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.GetStatus() -> PdfiumRaster.Orchestration.PdfRenderOrchestratorStatus!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.InspectDocumentAsync(byte[]! pdfBytes, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.Orchestration.PdfDocumentInfo!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.InspectDocumentAsync(System.IO.Stream! pdfStream, bool leaveOpen = false, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.Orchestration.PdfDocumentInfo!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestrator.InspectDocumentAsync(string! pdfPath, string? password = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PdfiumRaster.Orchestration.PdfDocumentInfo!>!
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Degraded = 2 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Faulted = 3 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Healthy = 1 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Starting = 0 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Stopped = 5 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorState.Stopping = 4 -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorStatus
+PdfiumRaster.Orchestration.PdfRenderOrchestratorStatus.AvailableWorkerCount.get -> int
+PdfiumRaster.Orchestration.PdfRenderOrchestratorStatus.State.get -> PdfiumRaster.Orchestration.PdfRenderOrchestratorState
+PdfiumRaster.Orchestration.PdfRenderOrchestratorStatus.WorkerCount.get -> int

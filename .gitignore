@@ -2,6 +2,7 @@
 .idea/
 .vs/
 .vscode/
+*.DotSettings.user
 artifacts/
 bin/
 obj/

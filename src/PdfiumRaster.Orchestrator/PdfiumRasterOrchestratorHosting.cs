@@ -39,26 +39,26 @@ internal sealed class PdfiumRasterOrchestratorHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = _orchestrator.GetHealthSnapshot();
+        var snapshot = _orchestrator.GetStatus();
         var data = new Dictionary<string, object>
         {
-            ["available_workers"] = snapshot.AvailableWorkers,
-            ["total_workers"] = snapshot.TotalWorkers,
+            ["available_workers"] = snapshot.AvailableWorkerCount,
+            ["total_workers"] = snapshot.WorkerCount,
         };
 
         var result = snapshot.State switch
         {
-            PdfRenderOrchestratorHealthState.Healthy => HealthCheckResult.Healthy(
+            PdfRenderOrchestratorState.Healthy => HealthCheckResult.Healthy(
                 "The orchestrator is accepting requests and all workers are available.", data),
-            PdfRenderOrchestratorHealthState.Starting => HealthCheckResult.Degraded(
-                $"The orchestrator is starting with {snapshot.AvailableWorkers} of " +
-                $"{snapshot.TotalWorkers} workers available.",
+            PdfRenderOrchestratorState.Starting => HealthCheckResult.Degraded(
+                $"The orchestrator is starting with {snapshot.AvailableWorkerCount} of " +
+                $"{snapshot.WorkerCount} workers available.",
                 data: data),
-            PdfRenderOrchestratorHealthState.Degraded => HealthCheckResult.Degraded(
-                $"The orchestrator is accepting requests with {snapshot.AvailableWorkers} of " +
-                $"{snapshot.TotalWorkers} workers available; worker replacement may be in progress.",
+            PdfRenderOrchestratorState.Degraded => HealthCheckResult.Degraded(
+                $"The orchestrator is accepting requests with {snapshot.AvailableWorkerCount} of " +
+                $"{snapshot.WorkerCount} workers available; worker replacement may be in progress.",
                 data: data),
-            PdfRenderOrchestratorHealthState.TerminalFailure => HealthCheckResult.Unhealthy(
+            PdfRenderOrchestratorState.Faulted => HealthCheckResult.Unhealthy(
                 "The orchestrator has encountered a terminal worker failure.", data: data),
             _ => HealthCheckResult.Unhealthy(
                 "The orchestrator is stopping or has stopped accepting requests.", data: data),
@@ -66,32 +66,4 @@ internal sealed class PdfiumRasterOrchestratorHealthCheck : IHealthCheck
 
         return Task.FromResult(result);
     }
-}
-
-internal enum PdfRenderOrchestratorHealthState
-{
-    Healthy,
-    Starting,
-    Degraded,
-    Stopped,
-    TerminalFailure,
-}
-
-internal readonly struct PdfRenderOrchestratorHealthSnapshot
-{
-    internal PdfRenderOrchestratorHealthSnapshot(
-        PdfRenderOrchestratorHealthState state,
-        int availableWorkers,
-        int totalWorkers)
-    {
-        State = state;
-        AvailableWorkers = availableWorkers;
-        TotalWorkers = totalWorkers;
-    }
-
-    internal PdfRenderOrchestratorHealthState State { get; }
-
-    internal int AvailableWorkers { get; }
-
-    internal int TotalWorkers { get; }
 }

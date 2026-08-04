@@ -23,12 +23,12 @@ failure, ownership, and lifecycle path it introduces.
 | --- | --- |
 | Public rendering API | Every path, `byte[]`, and `Stream` input overload returns a bitmap; task and streaming batch overloads preserve item count, position, page index, and order. |
 | Public saving API | Every combination of path, `byte[]`, or `Stream` input with path or `Stream` output is executed, including all multi-file batch inputs. |
-| Document inspection | Page count and page sizes for path, `byte[]`, and `Stream` inputs; point dimensions, ownership, cancellation, input limits, remote failures, worker reuse, and malformed metadata sequences. |
+| Document inspection | Unified document info, page count, and page sizes for path, `byte[]`, and `Stream` inputs; point dimensions, ownership, cancellation, input limits, remote failures, worker reuse, and malformed metadata sequences. |
 | Options and limits | Defaults, valid assignments, invalid ranges, enum validation, copied restart-delay collections, input/bitmap/output byte enforcement, temporary placement, and atomic output preservation. |
 | Ownership | Owned and caller-owned input streams across success, lazy streaming enumeration, validation failure, cancellation, rejection, and timeout; output streams always remain caller-owned. |
 | Scheduling | Wait-mode backpressure, reject mode, bounded queueing, streaming result backpressure, queued cancellation, and multi-worker concurrency. |
 | Lifetime | Graceful draining, cancellation shutdown, repeated completion, repeated disposal, post-completion rejection, and post-disposal rejection. |
-| Hosting and health | Singleton and hosted-service registration, cancellable async startup, pre-start request rejection, automatic logging, graceful and canceled host shutdown, async disposal, and starting, healthy, degraded, recovered, stopped, and terminal health states. |
+| Hosting and health | Singleton and hosted-service registration, cancellable async startup, pre-start request rejection, automatic logging, graceful and canceled host shutdown, async disposal, public status snapshots, and starting, healthy, degraded, recovered, stopping, stopped, and terminal health states. |
 | Worker failures | Startup cancellation, exit, and timeout; invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, early-stream-exit replacement, successful replacement, and exhausted replacement attempts. |
 | Exceptions | Public constructors and exposed crash, timeout, remote-error, startup, queue-full, and protocol-error properties. |
 | Pipe protocol | Golden version-three vectors, operation, batch, resource-limit, page-count, and page-size fields; fragmented frames, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |

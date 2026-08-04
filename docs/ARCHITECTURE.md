@@ -122,6 +122,8 @@ one `PageCount` frame. `GetPageSizesAsync` returns `PageCount`, then one `PageSi
 `Complete`; individual size frames keep control payloads bounded for large documents. The orchestrator rejects
 negative counts, missing or excess size frames, non-positive or non-finite dimensions, and unexpected render output.
 The private protocol is version 3 because operation metadata and these response sequences changed its wire layout.
+`InspectDocumentAsync` uses the same page-size sequence and projects its count and ordered sizes into one immutable
+public result, so it does not add a protocol operation or version change.
 
 For `RenderPagesAsync`, the orchestrator collects every completed bitmap and completes the task with the full list.
 For `RenderPagesStreamAsync`, it publishes completed `PdfPageBitmap` values to a capacity-one channel. The pipe reader

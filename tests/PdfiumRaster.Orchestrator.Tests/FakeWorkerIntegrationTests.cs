@@ -271,6 +271,8 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
 
         await Assert.ThrowsAsync<PdfWorkerCrashedException>(() => crashing);
         await Assert.ThrowsAsync<PdfWorkerStartupException>(() => pending);
+        Assert.Equal(PdfRenderOrchestratorState.Faulted, orchestrator.GetStatus().State);
+        Assert.Equal(0, orchestrator.GetStatus().AvailableWorkerCount);
         var terminalHealth = await new PdfiumRasterOrchestratorHealthCheck(orchestrator)
             .CheckHealthAsync(new HealthCheckContext());
         Assert.Equal(HealthStatus.Unhealthy, terminalHealth.Status);
@@ -294,6 +296,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
 
         await Assert.ThrowsAsync<PdfWorkerCrashedException>(
             () => orchestrator.RenderPageAsync("unused.pdf", 0));
+        Assert.Equal(PdfRenderOrchestratorState.Degraded, orchestrator.GetStatus().State);
         var replacing = await healthCheck.CheckHealthAsync(new HealthCheckContext());
 
         Assert.Equal(HealthStatus.Degraded, replacing.Status);
@@ -303,6 +306,7 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
         var recovered = await healthCheck.CheckHealthAsync(new HealthCheckContext());
 
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, bitmap.Pixels);
+        Assert.Equal(PdfRenderOrchestratorState.Healthy, orchestrator.GetStatus().State);
         Assert.Equal(HealthStatus.Healthy, recovered.Status);
         await orchestrator.CompleteAsync();
     }

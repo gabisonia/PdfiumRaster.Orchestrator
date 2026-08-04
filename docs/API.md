@@ -87,20 +87,21 @@ worker.
 Use the worker-isolated inspection APIs when the application needs document metadata before choosing pages to render:
 
 ```csharp
-var pageCount = await orchestrator.GetPageCountAsync("input.pdf");
-var pageSizes = await orchestrator.GetPageSizesAsync("input.pdf");
+var document = await orchestrator.InspectDocumentAsync("input.pdf");
 
-for (var pageIndex = 0; pageIndex < pageSizes.Count; pageIndex++)
+for (var pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
 {
-    var size = pageSizes[pageIndex];
+    var size = document.PageSizes[pageIndex];
     Console.WriteLine($"Page {pageIndex}: {size.Width} x {size.Height} points");
 }
 ```
 
-`GetPageCountAsync` and `GetPageSizesAsync` each have path, `byte[]`, and `Stream` overloads. Sizes use PDF points
-(`1/72` inch) and the returned list follows zero-based page order. Stream inputs are read from their current position;
-the orchestrator disposes them after success, failure, cancellation, validation failure, or queue rejection unless
-`leaveOpen: true` is passed. Byte arrays remain caller-owned and must not be modified before completion.
+`InspectDocumentAsync` returns an immutable `PdfDocumentInfo` containing both `PageCount` and `PageSizes` from one
+page-size inspection request. `GetPageCountAsync` and `GetPageSizesAsync` remain available when only one value is
+needed. Every inspection API has path, `byte[]`, and `Stream` overloads. Sizes use PDF points (`1/72` inch) and the
+returned list follows zero-based page order. Stream inputs are read from their current position; the orchestrator
+disposes them after success, failure, cancellation, validation failure, or queue rejection unless `leaveOpen: true`
+is passed. Byte arrays remain caller-owned and must not be modified before completion.
 
 Inspection is scheduled through the same bounded worker pool as rendering. It observes `QueueFullMode`,
 `RequestTimeout`, `MaximumInputBytes`, cancellation, worker replacement, and standard diagnostics. It does not render
@@ -254,6 +255,13 @@ pipe, or create a separate probe worker. Inject the singleton into controllers a
 `CompleteAsync()` from request code. Each replica has its own singleton, so total workers equal `WorkerCount`
 multiplied by the number of application replicas.
 
+### Standalone status
+
+Call `GetStatus()` when an application does not use the .NET health-check integration. It returns a point-in-time
+`PdfRenderOrchestratorStatus` containing `State`, `AvailableWorkerCount`, and `WorkerCount`. The state is `Starting`,
+`Healthy`, `Degraded`, `Faulted`, `Stopping`, or `Stopped`. The method reads in-memory state only and never communicates
+with a worker. Use the standard metrics rather than polling status for queue depth or request throughput.
+
 ## Error handling
 
 - `PdfWorkerStartupException`: a worker could not start or finish its handshake.
@@ -335,3 +343,6 @@ dotnet publish -r linux-x64
 Choose exactly one orchestrator package. Do not reference the all-runtime and slim packages together, or multiple slim
 packages together, because they contain the same client assembly and build target. When using a slim package, the
 project's `RuntimeIdentifier` or publish `-r` value must match the package suffix.
+
+A mismatched slim package and target RID fail during build or publish with an actionable error. Switch to the matching
+RID-specific package or to the all-runtime package when one restored dependency graph must publish for several RIDs.

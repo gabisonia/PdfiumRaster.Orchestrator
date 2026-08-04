@@ -3,6 +3,26 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.0 - 2026-08-04
+
+### Added
+
+- Add `InspectDocumentAsync` for path, byte-array, and stream inputs, returning page count and ordered page sizes from
+  one worker-isolated inspection request.
+- Add `GetStatus` with a public lifecycle state and point-in-time worker-availability snapshot for applications that
+  do not use the .NET health-check integration.
+
+### Changed
+
+- Fail builds and publishes with an actionable error when an installed RID-specific package does not match the target
+  runtime identifier.
+- Prepare the repository for public contributions with support guidance, issue and pull-request templates, dependency
+  update automation, restricted CI permissions, and removal of local or unverified test artifacts.
+
+### Documentation
+
+- Document unified inspection, standalone status monitoring, slim-package validation, and the public support process.
+
 ## 0.9.0 - 2026-08-04
 
 ### Added

@@ -1,6 +1,8 @@
 # PdfiumRaster.Orchestrator
 
 [![NuGet](https://img.shields.io/nuget/v/PdfiumRaster.Orchestrator.svg)](https://www.nuget.org/packages/PdfiumRaster.Orchestrator)
+[![CI](https://github.com/gabisonia/PdfiumRaster.Orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/gabisonia/PdfiumRaster.Orchestrator/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/gabisonia/PdfiumRaster.Orchestrator)](LICENSE)
 
 > [!IMPORTANT]
 > `PdfiumRaster.Orchestrator` is a multi-process orchestration layer built on top of
@@ -112,13 +114,19 @@ Inspect a document through the same isolated worker pool before deciding what to
 points (`1/72` inch) and preserve zero-based page order:
 
 ```csharp
-var pageCount = await orchestrator.GetPageCountAsync("report.pdf");
-var pageSizes = await orchestrator.GetPageSizesAsync("report.pdf");
+var document = await orchestrator.InspectDocumentAsync("report.pdf");
+Console.WriteLine($"Pages: {document.PageCount}");
+
+foreach (var pageSize in document.PageSizes)
+{
+    Console.WriteLine($"{pageSize.Width} x {pageSize.Height} points");
+}
 ```
 
-Both APIs also accept `byte[]` and `Stream` inputs, passwords, and cancellation. They follow the same bounded queue,
-input limit, timeout, stream-ownership, crash-isolation, logging, tracing, and metrics behavior as rendering requests;
-PDF parsing remains inside the worker process.
+`InspectDocumentAsync`, `GetPageCountAsync`, and `GetPageSizesAsync` accept path, `byte[]`, and `Stream` inputs,
+passwords, and cancellation. They follow the same bounded queue, input limit, timeout, stream-ownership,
+crash-isolation, logging, tracing, and metrics behavior as rendering requests; PDF parsing remains inside the worker
+process.
 
 For several pages from the same document, use `RenderPagesAsync`, `RenderPagesStreamAsync`, or `SavePagesAsync`. One
 batch is one scheduled request: its worker transfers and opens the PDF once, reuses a `PdfRenderSession`, and processes
@@ -191,6 +199,16 @@ queue and execution durations, outcomes, queue depth, active requests, worker av
 but never PDF or image paths, passwords, pipe data, worker standard error, or document content. See
 [diagnostics](docs/API.md#diagnostics) for the metric schema and setup example.
 
+Applications outside the .NET hosting abstractions can read the same in-memory lifecycle information without starting
+a probe request:
+
+```csharp
+var status = orchestrator.GetStatus();
+Console.WriteLine($"{status.State}: {status.AvailableWorkerCount}/{status.WorkerCount} workers available");
+```
+
+The status is a point-in-time snapshot. Use metrics for continuous queue and request monitoring.
+
 > [!IMPORTANT]
 > In a .NET Generic Host or ASP.NET Core application, use `AddPdfiumRasterOrchestrator`. It registers exactly one
 > orchestrator, automatically supplies the host logger factory, starts the workers asynchronously with the host, and
@@ -232,7 +250,7 @@ The package supports self-contained workers on Windows x86/x64/ARM64, Linux ARM3
 macOS x64/ARM64. Modern .NET does not provide a self-contained worker runtime for 32-bit Linux, so `linux-x86` and
 `linux-musl-x86` are not supported.
 
-See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), [release history](CHANGELOG.md), and
-[releasing](docs/RELEASING.md) for more detail.
+See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), [release history](CHANGELOG.md),
+[support](SUPPORT.md), and [releasing](docs/RELEASING.md) for more detail.
 For worker startup, pipe, crash, timeout, filesystem, and diagnostic guidance, see
 [troubleshooting](docs/TROUBLESHOOTING.md).

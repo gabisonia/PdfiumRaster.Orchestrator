@@ -7,11 +7,11 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 0.9.0
+PACKAGE_VERSION ?= 1.0.0
 PACKAGE_ID ?= PdfiumRaster.Orchestrator
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 
-.PHONY: help restore build test coverage test-local test-manual publish-workers pack inspect-package verify-package smoke-package smoke-slim-package release-check clean
+.PHONY: help restore build test coverage test-local test-manual publish-workers pack inspect-package verify-package smoke-package smoke-slim-package smoke-slim-package-mismatch release-check clean
 
 help:
 	@printf '%s\n' \
@@ -28,6 +28,7 @@ help:
 		'  make verify-package   Assert all required package assets are present' \
 		'  make smoke-package    Install the local package in a fresh app and render a page' \
 		'  make smoke-slim-package Smoke test the current platform slim package' \
+		'  make smoke-slim-package-mismatch Verify a slim package rejects a mismatched RID' \
 		'  make release-check    Run tests, pack, inspect, and the package smoke test' \
 		'  make clean            Remove build and package outputs'
 
@@ -149,8 +150,8 @@ smoke-package: $(PACKAGE)
 		'using PdfiumRaster.Orchestration;' \
 		'' \
 		'await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions { WorkerCount = 1 });' \
-		'var pageCount = await orchestrator.GetPageCountAsync("input.pdf");' \
-		'var pageSizes = await orchestrator.GetPageSizesAsync("input.pdf");' \
+		'var status = orchestrator.GetStatus();' \
+		'var document = await orchestrator.InspectDocumentAsync("input.pdf");' \
 		'await orchestrator.SavePageAsync("input.pdf", pageIndex: 0, "page.png", new PdfImageConversionOptions' \
 		'{' \
 		'    Render = PdfPageRenderOptions.ScreenPreview,' \
@@ -166,8 +167,12 @@ smoke-package: $(PACKAGE)
 		'    streamedPages++;' \
 		'}' \
 		'await orchestrator.CompleteAsync();' \
+		'var stopped = orchestrator.GetStatus();' \
 		'' \
-		'if (pageCount != 1 || pageSizes.Count != 1 || pageSizes[0].Width <= 0 || pageSizes[0].Height <= 0 ||' \
+		'if (status.State != PdfRenderOrchestratorState.Healthy || status.AvailableWorkerCount != 1 ||' \
+		'    status.WorkerCount != 1 || stopped.State != PdfRenderOrchestratorState.Stopped ||' \
+		'    document.PageCount != 1 || document.PageSizes.Count != 1 ||' \
+		'    document.PageSizes[0].Width <= 0 || document.PageSizes[0].Height <= 0 ||' \
 		'    streamedPages != 1 || !File.Exists("page.png") || new FileInfo("page.png").Length == 0)' \
 		'{' \
 		'    throw new InvalidOperationException("Smoke test did not generate page.png.");' \
@@ -180,7 +185,32 @@ smoke-slim-package: $(PACKAGE)
 	if [[ -z "$$rid" ]]; then echo 'Could not determine the current .NET runtime identifier.' >&2; exit 1; fi; \
 	$(MAKE) smoke-package PACKAGE_ID="PdfiumRaster.Orchestrator.$$rid" PACKAGE_VERSION=$(PACKAGE_VERSION)
 
-release-check: coverage pack verify-package inspect-package smoke-package smoke-slim-package
+smoke-slim-package-mismatch: $(PACKAGE)
+	@set -euo pipefail; \
+	repo="$$(pwd)"; \
+	rid="$$(dotnet --info | awk '/RID:/{print $$2; exit}')"; \
+	if [[ -z "$$rid" ]]; then echo 'Could not determine the current .NET runtime identifier.' >&2; exit 1; fi; \
+	case "$$rid" in win-*) mismatch_rid='linux-x64' ;; *) mismatch_rid='win-x64' ;; esac; \
+	package="$(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$$rid.$(PACKAGE_VERSION).nupkg"; \
+	if [[ ! -f "$$package" ]]; then echo "Current-platform slim package is missing: $$package" >&2; exit 1; fi; \
+	tmpdir="$$(mktemp -d)"; \
+	export NUGET_PACKAGES="$$tmpdir/nuget-packages"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	dotnet new console -n PdfiumRasterOrchestratorRidMismatch -o "$$tmpdir/app" --framework net10.0 >/dev/null; \
+	cd "$$tmpdir/app"; \
+	dotnet new nugetconfig --force >/dev/null; \
+	dotnet nuget add source "$$repo/$(ARTIFACTS_DIR)" --name local --configfile nuget.config >/dev/null; \
+	dotnet add package "PdfiumRaster.Orchestrator.$$rid" --version "$(PACKAGE_VERSION)" --no-restore >/dev/null; \
+	dotnet restore --configfile nuget.config >/dev/null; \
+	set +e; \
+	output="$$(dotnet build --configuration Release --runtime "$$mismatch_rid" --no-restore 2>&1)"; \
+	status=$$?; \
+	set -e; \
+	if [[ $$status -eq 0 ]]; then echo 'A mismatched slim package unexpectedly built successfully.' >&2; exit 1; fi; \
+	if ! grep -Fq 'does not match target runtime' <<<"$$output"; then printf '%s\n' "$$output" >&2; exit 1; fi; \
+	echo "Verified that PdfiumRaster.Orchestrator.$$rid rejects target runtime $$mismatch_rid."
+
+release-check: coverage pack verify-package inspect-package smoke-package smoke-slim-package smoke-slim-package-mismatch
 
 clean:
 	dotnet clean $(SOLUTION)

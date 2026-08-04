@@ -42,8 +42,8 @@ using PdfiumRaster.Orchestration;
 
 await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(
     new PdfRenderOrchestratorOptions { WorkerCount = 1 });
-var pageCount = await orchestrator.GetPageCountAsync("input.pdf");
-var pageSizes = await orchestrator.GetPageSizesAsync("input.pdf");
+var status = orchestrator.GetStatus();
+var document = await orchestrator.InspectDocumentAsync("input.pdf");
 await orchestrator.SavePageAsync("input.pdf", pageIndex: 0, "page.png", new PdfImageConversionOptions
 {
     Render = PdfPageRenderOptions.ScreenPreview,
@@ -60,8 +60,12 @@ await foreach (var page in orchestrator.RenderPagesStreamAsync("input.pdf", new[
     streamedPages++;
 }
 await orchestrator.CompleteAsync();
+var stopped = orchestrator.GetStatus();
 
-if (pageCount != 1 || pageSizes.Count != 1 || pageSizes[0].Width <= 0 || pageSizes[0].Height <= 0 ||
+if (status.State != PdfRenderOrchestratorState.Healthy || status.AvailableWorkerCount != 1 ||
+    status.WorkerCount != 1 || stopped.State != PdfRenderOrchestratorState.Stopped ||
+    document.PageCount != 1 || document.PageSizes.Count != 1 ||
+    document.PageSizes[0].Width <= 0 || document.PageSizes[0].Height <= 0 ||
     streamedPages != 1 || !File.Exists("page.png") || new FileInfo("page.png").Length == 0)
 {
     throw new InvalidOperationException("Smoke test did not generate page.png.");

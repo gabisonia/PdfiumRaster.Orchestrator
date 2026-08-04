@@ -194,6 +194,59 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Queues a PDF file inspection and returns its page count and page sizes from an isolated worker.
+    /// </summary>
+    /// <param name="pdfPath">PDF path opened by a local worker.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The document page count and page sizes in zero-based page order.</returns>
+    public Task<PdfDocumentInfo> InspectDocumentAsync(
+        string pdfPath,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateDocumentInfoAsync(GetPageSizesAsync(pdfPath, password, cancellationToken));
+    }
+
+    /// <summary>
+    /// Queues a PDF byte-array inspection and returns its page count and page sizes from an isolated worker.
+    /// </summary>
+    /// <param name="pdfBytes">PDF bytes that must not be modified until completion.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The document page count and page sizes in zero-based page order.</returns>
+    /// <remarks>The bytes are transferred to a worker in bounded chunks and remain caller-owned.</remarks>
+    public Task<PdfDocumentInfo> InspectDocumentAsync(
+        byte[] pdfBytes,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateDocumentInfoAsync(GetPageSizesAsync(pdfBytes, password, cancellationToken));
+    }
+
+    /// <summary>
+    /// Queues a PDF stream inspection and returns its page count and page sizes from an isolated worker.
+    /// </summary>
+    /// <param name="pdfStream">Readable stream that must remain usable and unmodified until completion.</param>
+    /// <param name="leaveOpen">Whether to leave the stream open after completion, cancellation, or rejection.</param>
+    /// <param name="password">Optional document password.</param>
+    /// <param name="cancellationToken">Cancels queue waiting or work that has not entered an uninterruptible stage.</param>
+    /// <returns>The document page count and page sizes in zero-based page order.</returns>
+    /// <remarks>
+    /// The stream is transferred in chunks and spooled to a worker-owned temporary file for random access. Unless
+    /// <paramref name="leaveOpen" /> is <see langword="true" />, the orchestrator assumes ownership when this method is
+    /// called and disposes the stream after completion, cancellation, validation failure, or queue rejection.
+    /// </remarks>
+    public Task<PdfDocumentInfo> InspectDocumentAsync(
+        Stream pdfStream,
+        bool leaveOpen = false,
+        string? password = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateDocumentInfoAsync(GetPageSizesAsync(pdfStream, leaveOpen, password, cancellationToken));
+    }
+
+    /// <summary>
     /// Queues a PDF file inspection and returns its page count from an isolated worker.
     /// </summary>
     /// <param name="pdfPath">PDF path opened by a local worker.</param>
@@ -780,7 +833,11 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         return new ValueTask(_completion);
     }
 
-    internal PdfRenderOrchestratorHealthSnapshot GetHealthSnapshot()
+    /// <summary>
+    /// Gets an in-memory snapshot of the orchestrator lifecycle and current worker availability.
+    /// </summary>
+    /// <returns>A point-in-time status snapshot. No worker process or pipe operation is performed.</returns>
+    public PdfRenderOrchestratorStatus GetStatus()
     {
         var availableWorkers = 0;
         foreach (var worker in _workers)
@@ -791,29 +848,38 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             }
         }
 
-        PdfRenderOrchestratorHealthState state;
+        PdfRenderOrchestratorState state;
         if (Volatile.Read(ref _terminalError) is not null)
         {
-            state = PdfRenderOrchestratorHealthState.TerminalFailure;
+            state = PdfRenderOrchestratorState.Faulted;
         }
         else if (Volatile.Read(ref _shutdownRequested) != 0 || Volatile.Read(ref _disposed) != 0)
         {
-            state = PdfRenderOrchestratorHealthState.Stopped;
+            state = _completion.IsCompleted
+                ? PdfRenderOrchestratorState.Stopped
+                : PdfRenderOrchestratorState.Stopping;
         }
         else if (Volatile.Read(ref _started) == 0)
         {
-            state = PdfRenderOrchestratorHealthState.Starting;
+            state = PdfRenderOrchestratorState.Starting;
         }
         else if (availableWorkers == _workers.Length)
         {
-            state = PdfRenderOrchestratorHealthState.Healthy;
+            state = PdfRenderOrchestratorState.Healthy;
         }
         else
         {
-            state = PdfRenderOrchestratorHealthState.Degraded;
+            state = PdfRenderOrchestratorState.Degraded;
         }
 
-        return new PdfRenderOrchestratorHealthSnapshot(state, availableWorkers, _workers.Length);
+        return new PdfRenderOrchestratorStatus(state, availableWorkers, _workers.Length);
+    }
+
+    private static async Task<PdfDocumentInfo> CreateDocumentInfoAsync(
+        Task<IReadOnlyList<PdfPageSize>> pageSizesTask)
+    {
+        var pageSizes = await pageSizesTask.ConfigureAwait(false);
+        return new PdfDocumentInfo(pageSizes);
     }
 
     private Task<int> SubmitPageCount(

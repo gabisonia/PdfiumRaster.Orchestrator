@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible PdfiumRaster.Orchestrator defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not attach confidential PDFs, passwords, filesystem paths, pipe tokens, or complete worker standard-error
+        output. Report suspected vulnerabilities through the process in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, process architecture, target framework, and publish RID.
+      placeholder: Ubuntu 24.04, x64, net10.0, linux-x64
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest safe code sample and steps that reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include exception types and sanitized logs without document content or sensitive values.

@@ -47,12 +47,40 @@ public sealed class HostingIntegrationTests : IDisposable
         Assert.Equal(1, firstConfigurationCalls);
         Assert.Equal(0, secondConfigurationCalls);
         Assert.True(loggerFactory.CreateLoggerCalls > 0);
+        Assert.Equal(PdfRenderOrchestratorState.Starting, first.GetStatus().State);
+        Assert.Equal(0, first.GetStatus().AvailableWorkerCount);
+        Assert.Equal(1, first.GetStatus().WorkerCount);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => first.RenderPageAsync(GetAssetPath("smoke.pdf"), 0));
 
         await hostedService.StartAsync(CancellationToken.None);
+        Assert.Equal(PdfRenderOrchestratorState.Healthy, first.GetStatus().State);
+        Assert.Equal(1, first.GetStatus().AvailableWorkerCount);
         await hostedService.StopAsync(CancellationToken.None);
+        Assert.Equal(PdfRenderOrchestratorState.Stopped, first.GetStatus().State);
+    }
+
+    [Fact]
+    public async Task StatusReportsStoppingWhileAcceptedWorkDrains()
+    {
+        var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
+        using var blockingInput = new BlockingReadStream(bytes);
+        await using var orchestrator = new PdfRenderOrchestrator(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 1,
+        });
+        var rendering = orchestrator.RenderPageAsync(blockingInput, 0, leaveOpen: true);
+        await blockingInput.WaitUntilReadAsync();
+
+        var completion = orchestrator.CompleteAsync();
+
+        Assert.Equal(PdfRenderOrchestratorState.Stopping, orchestrator.GetStatus().State);
+        blockingInput.Release();
+        await rendering;
+        await completion;
+        Assert.Equal(PdfRenderOrchestratorState.Stopped, orchestrator.GetStatus().State);
     }
 
     [Fact]

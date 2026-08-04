@@ -80,12 +80,8 @@ public sealed class ManualOrchestratorRenderingTests(ITestOutputHelper output)
         var configuredPath = Environment.GetEnvironmentVariable(ManualPdfVariable);
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
-            return Path.Combine(
-                repositoryRoot,
-                "tests",
-                "PdfiumRaster.Orchestrator.Tests",
-                "TestAssets",
-                "Engineering Drawings.pdf");
+            throw new InvalidOperationException(
+                "No manual PDF was configured. Run 'make test-manual PDF=/path/to/input.pdf'.");
         }
 
         return Path.IsPathRooted(configuredPath)

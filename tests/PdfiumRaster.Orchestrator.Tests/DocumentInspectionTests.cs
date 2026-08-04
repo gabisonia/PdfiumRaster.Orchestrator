@@ -46,6 +46,30 @@ public sealed class DocumentInspectionTests : IDisposable
     }
 
     [Fact]
+    public async Task UnifiedInspectionReturnsPageCountAndImmutableOrderedSizes()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        var bytes = await File.ReadAllBytesAsync(pdfPath);
+        var expectedSizes = PdfImageConverter.GetPageSizes(pdfPath);
+        using var stream = new MemoryStream(bytes, writable: false);
+        await using var orchestrator = CreateOrchestrator();
+
+        var pathInfo = await orchestrator.InspectDocumentAsync(pdfPath);
+        var byteInfo = await orchestrator.InspectDocumentAsync(bytes);
+        var streamInfo = await orchestrator.InspectDocumentAsync(stream, leaveOpen: true);
+        await orchestrator.CompleteAsync();
+
+        Assert.Equal(expectedSizes.Count, pathInfo.PageCount);
+        Assert.Equal(pathInfo.PageCount, pathInfo.PageSizes.Count);
+        AssertPageSizes(expectedSizes, pathInfo.PageSizes);
+        AssertPageSizes(expectedSizes, byteInfo.PageSizes);
+        AssertPageSizes(expectedSizes, streamInfo.PageSizes);
+        Assert.True(stream.CanRead);
+        Assert.IsAssignableFrom<IReadOnlyList<PdfPageSize>>(pathInfo.PageSizes);
+        Assert.False(pathInfo.PageSizes is IList<PdfPageSize> { IsReadOnly: false });
+    }
+
+    [Fact]
     public async Task OwnedInspectionStreamsAreDisposedAfterCompletionAndCancellation()
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
@@ -117,6 +141,10 @@ public sealed class DocumentInspectionTests : IDisposable
         Assert.Throws<ArgumentNullException>(() =>
         {
             _ = orchestrator.GetPageSizesAsync((Stream)null!);
+        });
+        Assert.Throws<ArgumentException>(() =>
+        {
+            _ = orchestrator.InspectDocumentAsync(Array.Empty<byte>());
         });
         using var unreadable = new MemoryStream();
         unreadable.Dispose();

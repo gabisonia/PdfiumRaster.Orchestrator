@@ -21,8 +21,8 @@ var options = new PdfImageConversionOptions
 {
     Format = PdfImageOutputFormat.Png,
 };
-var pageCount = await orchestrator.GetPageCountAsync(pdfPath);
-var jobs = Enumerable.Range(0, pageCount)
+var document = await orchestrator.InspectDocumentAsync(pdfPath);
+var jobs = Enumerable.Range(0, document.PageCount)
     .Chunk(16)
     .Select(batch => orchestrator.SavePagesAsync(
         pdfPath,

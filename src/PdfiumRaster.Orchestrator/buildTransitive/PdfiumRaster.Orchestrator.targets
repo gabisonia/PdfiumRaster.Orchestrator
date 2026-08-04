@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <_PdfiumRasterOrchestratorPackageRid
+      Condition="'$(MSBuildThisFileName)' != 'PdfiumRaster.Orchestrator'">$([System.String]::Copy('$(MSBuildThisFileName)').Replace('PdfiumRaster.Orchestrator.', ''))</_PdfiumRasterOrchestratorPackageRid>
     <_PdfiumRasterOrchestratorWorkerRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_PdfiumRasterOrchestratorWorkerRid>
     <_PdfiumRasterOrchestratorWorkerRid Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_PdfiumRasterOrchestratorWorkerRid>
     <_PdfiumRasterOrchestratorWorkerFile Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' == 'win-x86' Or
@@ -17,4 +19,10 @@
           CopyToPublishDirectory="PreserveNewest"
           Visible="false" />
   </ItemGroup>
+
+  <Target Name="ValidatePdfiumRasterOrchestratorWorkerRid" BeforeTargets="PrepareForBuild;Publish"
+          Condition="'$(_PdfiumRasterOrchestratorPackageRid)' != ''">
+    <Error Condition="'$(_PdfiumRasterOrchestratorWorkerRid)' != '$(_PdfiumRasterOrchestratorPackageRid)'"
+           Text="The installed PdfiumRaster.Orchestrator.$(_PdfiumRasterOrchestratorPackageRid) package does not match target runtime '$(_PdfiumRasterOrchestratorWorkerRid)'. Install the matching RID-specific package or use PdfiumRaster.Orchestrator." />
+  </Target>
 </Project>

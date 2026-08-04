@@ -19,8 +19,8 @@ await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRe
     QueueCapacity = 64,
 });
 
-var pageCount = await orchestrator.GetPageCountAsync("input.pdf");
-var jobs = Enumerable.Range(0, pageCount)
+var document = await orchestrator.InspectDocumentAsync("input.pdf");
+var jobs = Enumerable.Range(0, document.PageCount)
     .Chunk(16)
     .Select(batch => orchestrator.SavePagesAsync(
         "input.pdf",
@@ -33,7 +33,7 @@ await Task.WhenAll(jobs);
 await orchestrator.CompleteAsync();
 ```
 
-The page count is inspected in an isolated worker before export. Each 16-page batch then opens the PDF once; multiple
+The document is inspected in an isolated worker before export. Each 16-page batch then opens the PDF once; multiple
 batches can run on separate workers. Tune the batch size for document complexity, memory limits, and the desired
 balance between reuse and parallelism.
 

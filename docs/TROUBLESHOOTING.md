@@ -40,6 +40,11 @@ Check that:
 Do not copy a worker from a different package version over the packaged worker. The startup handshake checks protocol
 compatibility, but using the matching library and worker is the supported configuration.
 
+RID-specific packages validate their package suffix against the build or publish runtime identifier. A build error
+that says the package does not match the target runtime means the application referenced the wrong slim package.
+Install the matching `PdfiumRaster.Orchestrator.<rid>` package, or use the all-runtime
+`PdfiumRaster.Orchestrator` package when publishing several RIDs from one restored dependency graph.
+
 ## Startup timeout and replacement policy
 
 Worker connection and handshake default to 15 seconds. Slow process creation, cold storage, aggressive antivirus
