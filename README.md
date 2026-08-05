@@ -2,6 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/PdfiumRaster.Orchestrator.svg)](https://www.nuget.org/packages/PdfiumRaster.Orchestrator)
 [![CI](https://github.com/gabisonia/PdfiumRaster.Orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/gabisonia/PdfiumRaster.Orchestrator/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gabisonia/PdfiumRaster.Orchestrator/badge)](https://scorecard.dev/viewer/?uri=github.com/gabisonia/PdfiumRaster.Orchestrator)
 [![License](https://img.shields.io/github/license/gabisonia/PdfiumRaster.Orchestrator)](LICENSE)
 
 > [!IMPORTANT]

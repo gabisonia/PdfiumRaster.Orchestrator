@@ -17,8 +17,11 @@ open a public issue asking the maintainer for a private contact channel, without
 sensitive PDF. Include the affected version, operating system and architecture, impact, reproduction conditions, and
 whether the report may be disclosed after a fix is available.
 
-There is no guaranteed response or remediation SLA. Reports will be assessed based on reproducibility, impact, and
-whether the issue is in the orchestrator, PdfiumRaster, native dependencies, or the consuming application.
+There is no guaranteed response or remediation SLA. The maintainer aims to acknowledge vulnerability reports within
+7 days, provide an initial assessment within 14 days, and coordinate disclosure with the reporter. When a fix is
+needed, the target is to release it and disclose the vulnerability within 90 days; complex or upstream issues may
+require a different timeline. Reports will be assessed based on reproducibility, impact, and whether the issue is in
+the orchestrator, PdfiumRaster, native dependencies, or the consuming application.
 
 ## Isolation boundary
 

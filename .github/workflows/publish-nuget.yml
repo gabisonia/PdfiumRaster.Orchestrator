@@ -22,30 +22,37 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     environment: nuget
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
 
       - name: Compute package version
         id: version
         shell: bash
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
 
-          input_version="${{ inputs.version }}"
-          channel="${{ inputs.channel }}"
+          input_version="$INPUT_VERSION"
+          channel="$INPUT_CHANNEL"
 
           if [[ "$channel" == "stable" ]]; then
             if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -75,13 +82,19 @@ jobs:
         run: make coverage
 
       - name: Pack
-        run: make pack PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: make pack PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Verify package contents
-        run: make verify-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: make verify-package PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Smoke test netstandard2.1 package consumption
         shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
         run: |
           set -euo pipefail
 
@@ -90,20 +103,26 @@ jobs:
           cd "$tmpdir/compatibility"
           dotnet new nugetconfig --force
           dotnet nuget add source "$GITHUB_WORKSPACE/artifacts" --name local --configfile nuget.config
-          dotnet add package PdfiumRaster.Orchestrator --version "${{ steps.version.outputs.package_version }}"
+          dotnet add package PdfiumRaster.Orchestrator --version "$PACKAGE_VERSION"
           dotnet build --configuration Release
 
       - name: Smoke test packaged worker
-        run: make smoke-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: make smoke-package PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Smoke test slim packaged worker
-        run: make smoke-slim-package PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: make smoke-slim-package PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Verify slim package RID mismatch diagnostics
-        run: make smoke-slim-package-mismatch PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: make smoke-slim-package-mismatch PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PdfiumRaster.Orchestrator-${{ steps.version.outputs.package_version }}
           path: |
@@ -112,13 +131,15 @@ jobs:
           if-no-files-found: error
 
       - name: NuGet login
-        uses: NuGet/login@v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:
           user: ${{ inputs.nuget_user }}
 
       - name: Publish package
         shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -133,14 +154,14 @@ jobs:
 
           for package in "${packages[@]}"; do
             dotnet nuget push "$package" \
-              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+              --api-key "$NUGET_API_KEY" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
 
           for symbol_package in "${symbols[@]}"; do
             dotnet nuget push "$symbol_package" \
-              --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+              --api-key "$NUGET_API_KEY" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
