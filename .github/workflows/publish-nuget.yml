@@ -103,7 +103,7 @@ jobs:
         run: make smoke-slim-package-mismatch PACKAGE_VERSION=${{ steps.version.outputs.package_version }}
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PdfiumRaster.Orchestrator-${{ steps.version.outputs.package_version }}
           path: |
