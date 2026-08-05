@@ -6,6 +6,10 @@ Run the automated suite with:
 make test
 ```
 
+Automation restores NuGet packages in locked mode. When intentionally changing a centrally managed package version,
+regenerate the solution lockfiles with `dotnet restore PdfiumRaster.Orchestrator.slnx --force-evaluate` and commit all
+affected `packages.lock.json` files with the version change.
+
 Run the same suite with coverage collection and enforcement with:
 
 ```bash

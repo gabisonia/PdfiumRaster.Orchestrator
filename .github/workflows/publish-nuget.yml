@@ -76,7 +76,7 @@ jobs:
           echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
 
       - name: Restore
-        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx --locked-mode
 
       - name: Test and enforce coverage
         run: make coverage

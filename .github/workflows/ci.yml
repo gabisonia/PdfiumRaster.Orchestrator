@@ -31,7 +31,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx --locked-mode
 
       - name: Test
         run: dotnet test PdfiumRaster.Orchestrator.slnx --configuration Release --no-restore --filter "Category!=Local"
@@ -51,7 +51,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore PdfiumRaster.Orchestrator.slnx
+        run: dotnet restore PdfiumRaster.Orchestrator.slnx --locked-mode
 
       - name: Enforce coverage
         run: make coverage
