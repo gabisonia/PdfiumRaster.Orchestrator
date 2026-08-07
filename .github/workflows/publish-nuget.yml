@@ -12,7 +12,7 @@ on:
           - beta
           - stable
       version:
-        description: "Package version. Stable example: 1.0.0. Beta input can be 1.0.0-beta.1."
+        description: "Package version. Stable example: 1.1.0. Beta input can be 1.1.0-beta.1."
         required: true
         type: string
       nuget_user:
@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -56,7 +57,7 @@ jobs:
 
           if [[ "$channel" == "stable" ]]; then
             if [[ ! "$input_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Stable releases require a SemVer version such as 1.0.0." >&2
+              echo "Stable releases require a SemVer version such as 1.1.0." >&2
               exit 1
             fi
             package_version="$input_version"
@@ -80,6 +81,10 @@ jobs:
 
       - name: Test and enforce coverage
         run: make coverage
+
+      - name: Enforce transfer performance
+        if: inputs.channel == 'stable'
+        run: make performance-check BASE_REF=1.0.0
 
       - name: Pack
         env:

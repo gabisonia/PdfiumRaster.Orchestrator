@@ -1909,7 +1909,8 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
     {
         internal abstract WorkerSourceKind Kind { get; }
         internal virtual string? Path => null;
-        internal virtual Task SendAsync(Stream pipe, CancellationToken cancellationToken) => Task.CompletedTask;
+        internal virtual Task SendAsync(WorkerProtocolStream protocol, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
         internal virtual void Cleanup()
         {
         }
@@ -1941,16 +1942,21 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 
         internal override WorkerSourceKind Kind => WorkerSourceKind.Content;
 
-        internal override async Task SendAsync(Stream pipe, CancellationToken cancellationToken)
+        internal override async Task SendAsync(
+            WorkerProtocolStream protocol,
+            CancellationToken cancellationToken)
         {
             ThrowIfResourceLimitExceeded("input bytes", _maximumBytes, _bytes.LongLength);
             var offset = 0;
             while (offset < _bytes.Length)
             {
                 var count = Math.Min(WorkerProtocol.ChunkSize, _bytes.Length - offset);
-                var chunk = new byte[count];
-                Buffer.BlockCopy(_bytes, offset, chunk, 0, count);
-                await WorkerProtocol.WriteFrameAsync(pipe, WorkerMessage.InputChunk, chunk, cancellationToken)
+                await protocol.WriteFrameAsync(
+                        WorkerMessage.InputChunk,
+                        _bytes,
+                        offset,
+                        count,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 offset += count;
             }
@@ -1972,9 +1978,11 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 
         internal override WorkerSourceKind Kind => WorkerSourceKind.Content;
 
-        internal override async Task SendAsync(Stream pipe, CancellationToken cancellationToken)
+        internal override async Task SendAsync(
+            WorkerProtocolStream protocol,
+            CancellationToken cancellationToken)
         {
-            var buffer = new byte[WorkerProtocol.ChunkSize];
+            var buffer = protocol.TransferBuffer;
             long total = 0;
             int read;
             while ((read = await _stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)
@@ -1982,9 +1990,12 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             {
                 total = checked(total + read);
                 ThrowIfResourceLimitExceeded("input bytes", _maximumBytes, total);
-                var chunk = new byte[read];
-                Buffer.BlockCopy(buffer, 0, chunk, 0, read);
-                await WorkerProtocol.WriteFrameAsync(pipe, WorkerMessage.InputChunk, chunk, cancellationToken)
+                await protocol.WriteFrameAsync(
+                        WorkerMessage.InputChunk,
+                        buffer,
+                        0,
+                        read,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -2578,6 +2589,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
     {
         private const int StandardErrorLimit = 8192;
         private readonly NamedPipeServerStream _pipe;
+        private readonly WorkerProtocolStream _protocol;
         private readonly int _index;
         private readonly Process _process;
         private readonly string _temporaryDirectory;
@@ -2598,6 +2610,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
         {
             _index = index;
             _pipe = pipe;
+            _protocol = new WorkerProtocolStream(pipe);
             _process = process;
             _temporaryDirectory = temporaryDirectory;
             _logger = logger;
@@ -2660,11 +2673,12 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                 }
 
                 await connectionTask.ConfigureAwait(false);
-                var hello = await WorkerProtocol.ReadFrameAsync(pipe, timeout.Token).ConfigureAwait(false);
+                var hello = await connection._protocol.ReadFrameAsync(timeout.Token).ConfigureAwait(false);
                 WorkerProtocol.ValidateWorkerHello(hello, token);
 
-                await WorkerProtocol.WriteEmptyFrameAsync(pipe, WorkerMessage.Ready, timeout.Token)
+                await connection._protocol.WriteEmptyFrameAsync(WorkerMessage.Ready, timeout.Token)
                     .ConfigureAwait(false);
+                await connection._protocol.FlushAsync(timeout.Token).ConfigureAwait(false);
                 PdfRenderOrchestratorEventSource.Log.WorkerStarted(index, process.Id);
                 logger.WorkerStarted(index, process.Id);
                 PdfRenderOrchestratorTelemetry.WorkerStarted();
@@ -2725,8 +2739,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                     : null;
                 var operationCancellationToken = streamingCancellation?.Token ?? cancellationToken;
                 var request = job.CreateRequest();
-                await WorkerProtocol.WriteFrameAsync(
-                        _pipe,
+                await _protocol.WriteFrameAsync(
                         WorkerMessage.Request,
                         WorkerProtocol.SerializeRequest(request),
                         operationCancellationToken)
@@ -2734,13 +2747,12 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 
                 if (request.SourceKind == WorkerSourceKind.Content)
                 {
-                    await job.Source.SendAsync(_pipe, operationCancellationToken).ConfigureAwait(false);
-                    await WorkerProtocol.WriteEmptyFrameAsync(
-                            _pipe,
-                            WorkerMessage.InputEnd,
-                            operationCancellationToken)
+                    await job.Source.SendAsync(_protocol, operationCancellationToken).ConfigureAwait(false);
+                    await _protocol.WriteEmptyFrameAsync(WorkerMessage.InputEnd, operationCancellationToken)
                         .ConfigureAwait(false);
                 }
+
+                await _protocol.FlushAsync(operationCancellationToken).ConfigureAwait(false);
 
                 byte[]? bitmapPixels = null;
                 var bitmapOffset = 0;
@@ -2755,12 +2767,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 
                 while (true)
                 {
-                    var frame = await WorkerProtocol.ReadFrameAsync(_pipe, operationCancellationToken)
+                    var frameHeader = await _protocol.ReadFrameHeaderAsync(operationCancellationToken)
                         .ConfigureAwait(false);
-                    switch (frame.Message)
+                    switch (frameHeader.Message)
                     {
                         case WorkerMessage.BitmapHeader:
                         {
+                            var payload = await _protocol.ReadPayloadAsync(frameHeader, operationCancellationToken)
+                                .ConfigureAwait(false);
                             if (job.IsInspection || request.OutputKind != WorkerOutputKind.Bitmap)
                             {
                                 throw new PdfWorkerProtocolException("The worker sent an unexpected bitmap header.");
@@ -2790,7 +2804,7 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                                 bitmapCount++;
                             }
 
-                            var header = WorkerProtocol.DeserializeBitmapHeader(frame.Payload);
+                            var header = WorkerProtocol.DeserializeBitmapHeader(payload);
                             ValidateBitmapHeader(header.Width, header.Height, header.Stride, header.ByteCount);
                             ThrowIfResourceLimitExceeded(
                                 "bitmap bytes",
@@ -2812,48 +2826,83 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                             if (request.OutputKind == WorkerOutputKind.Bitmap)
                             {
                                 if (bitmapPixels is null ||
-                                    frame.Payload.Length > bitmapPixels.Length - bitmapOffset)
+                                    frameHeader.PayloadLength > bitmapPixels.Length - bitmapOffset)
                                 {
+                                    await _protocol.ReadPayloadAsync(
+                                            frameHeader,
+                                            _protocol.TransferBuffer,
+                                            0,
+                                            operationCancellationToken)
+                                        .ConfigureAwait(false);
                                     throw new PdfWorkerProtocolException("The worker sent too many bitmap bytes.");
                                 }
 
-                                Buffer.BlockCopy(frame.Payload, 0, bitmapPixels, bitmapOffset, frame.Payload.Length);
-                                bitmapOffset += frame.Payload.Length;
+                                await _protocol.ReadPayloadAsync(
+                                        frameHeader,
+                                        bitmapPixels,
+                                        bitmapOffset,
+                                        operationCancellationToken)
+                                    .ConfigureAwait(false);
+                                bitmapOffset += frameHeader.PayloadLength;
                             }
                             else if (request.OutputKind == WorkerOutputKind.Stream)
                             {
-                                totalOutputBytes = checked(totalOutputBytes + frame.Payload.Length);
+                                totalOutputBytes = checked(totalOutputBytes + frameHeader.PayloadLength);
                                 ThrowIfResourceLimitExceeded(
                                     "output bytes",
                                     request.MaximumOutputBytes,
                                     totalOutputBytes);
-                                await job.Target.Stream!.WriteAsync(
-                                        frame.Payload,
+                                await _protocol.ReadPayloadAsync(
+                                        frameHeader,
+                                        _protocol.TransferBuffer,
                                         0,
-                                        frame.Payload.Length,
+                                        operationCancellationToken)
+                                    .ConfigureAwait(false);
+                                await job.Target.Stream!.WriteAsync(
+                                        _protocol.TransferBuffer,
+                                        0,
+                                        frameHeader.PayloadLength,
                                         operationCancellationToken)
                                     .ConfigureAwait(false);
                             }
                             else
                             {
+                                await _protocol.ReadPayloadAsync(
+                                        frameHeader,
+                                        _protocol.TransferBuffer,
+                                        0,
+                                        operationCancellationToken)
+                                    .ConfigureAwait(false);
                                 throw new PdfWorkerProtocolException("The worker sent output bytes for a path target.");
                             }
 
                             break;
                         case WorkerMessage.PageCount:
+                        {
+                            var pageCountPayload = await _protocol.ReadPayloadAsync(
+                                    frameHeader,
+                                    operationCancellationToken)
+                                .ConfigureAwait(false);
                             if (!job.IsInspection || inspectedPageCount.HasValue)
                             {
                                 throw new PdfWorkerProtocolException("The worker sent an unexpected page count.");
                             }
 
-                            inspectedPageCount = WorkerProtocol.DeserializePageCount(frame.Payload);
+                            inspectedPageCount = WorkerProtocol.DeserializePageCount(
+                                pageCountPayload);
                             if (inspectedPageCount.Value < 0)
                             {
                                 throw new PdfWorkerProtocolException("The worker returned a negative page count.");
                             }
 
                             break;
+                        }
                         case WorkerMessage.PageSize:
+                        {
+                            var pageSizePayload = await _protocol.ReadPayloadAsync(
+                                    frameHeader,
+                                    operationCancellationToken)
+                                .ConfigureAwait(false);
                             if (!job.IsPageSizesInspection || !inspectedPageCount.HasValue)
                             {
                                 throw new PdfWorkerProtocolException("The worker sent an unexpected page size.");
@@ -2864,11 +2913,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                                 throw new PdfWorkerProtocolException("The worker returned too many page sizes.");
                             }
 
-                            var pageSize = WorkerProtocol.DeserializePageSize(frame.Payload);
+                            var pageSize = WorkerProtocol.DeserializePageSize(
+                                pageSizePayload);
                             ValidatePageSize(pageSize);
                             inspectedPageSizes.Add(pageSize);
                             break;
+                        }
                         case WorkerMessage.Complete:
+                            EnsureEmptyPayload(frameHeader);
                             if (job.IsInspection)
                             {
                                 if (!inspectedPageCount.HasValue)
@@ -2924,17 +2976,21 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                             return null;
                         case WorkerMessage.Error:
                         {
-                            var error = WorkerProtocol.DeserializeError(frame.Payload);
+                            var error = WorkerProtocol.DeserializeError(
+                                await _protocol.ReadPayloadAsync(frameHeader, operationCancellationToken)
+                                    .ConfigureAwait(false));
                             throw new PdfWorkerRemoteException(error.Type, error.Message);
                         }
                         case WorkerMessage.ResourceLimit:
                         {
-                            var limit = WorkerProtocol.DeserializeResourceLimit(frame.Payload);
+                            var limit = WorkerProtocol.DeserializeResourceLimit(
+                                await _protocol.ReadPayloadAsync(frameHeader, operationCancellationToken)
+                                    .ConfigureAwait(false));
                             throw new PdfRenderResourceLimitException(limit.Resource, limit.Limit, limit.Observed);
                         }
                         default:
                             throw new PdfWorkerProtocolException(
-                                $"The worker sent unexpected message {frame.Message} while processing a request.");
+                                $"The worker sent unexpected message {frameHeader.Message} while processing a request.");
                     }
                 }
             }
@@ -2952,6 +3008,14 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             }
         }
 
+        private static void EnsureEmptyPayload(WorkerFrameHeader header)
+        {
+            if (header.PayloadLength != 0)
+            {
+                throw new PdfWorkerProtocolException($"The {header.Message} frame must have an empty payload.");
+            }
+        }
+
         internal async Task StopAsync()
         {
             if (Volatile.Read(ref _disposed) != 0)
@@ -2963,11 +3027,9 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
             {
                 if (_pipe.IsConnected)
                 {
-                    await WorkerProtocol.WriteEmptyFrameAsync(
-                            _pipe,
-                            WorkerMessage.Shutdown,
-                            CancellationToken.None)
+                    await _protocol.WriteEmptyFrameAsync(WorkerMessage.Shutdown, CancellationToken.None)
                         .ConfigureAwait(false);
+                    await _protocol.FlushAsync(CancellationToken.None).ConfigureAwait(false);
                 }
 
                 if (!_process.WaitForExit(5000))

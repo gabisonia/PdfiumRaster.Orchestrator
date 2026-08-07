@@ -14,12 +14,17 @@ change compile.
 Install the .NET 10 SDK, then run:
 
 ```bash
-make release-check PACKAGE_VERSION=1.0.0
+make release-check PACKAGE_VERSION=1.1.0
 ```
 
 This runs automated tests with the enforced line and branch coverage thresholds, publishes every supported
 self-contained worker, creates the all-runtime and RID-specific NuGet and symbol packages, verifies package contents,
 installs both applicable package shapes in clean apps, and renders through their packaged workers.
+
+Stable release checks also run the 16 MiB pipe-transfer benchmark against the local `1.0.0` tag on the same machine.
+The candidate must reduce synchronous framing allocations by at least 50% and keep each end-to-end median at or below
+105% of the baseline. Use `make benchmark` for a candidate-only report or
+`make performance-check BASE_REF=1.0.0` for the enforced comparison.
 
 The enforced scenarios and platform-specific coverage strategy are listed in [the testing guide](TESTING.md).
 
@@ -59,5 +64,18 @@ profile. Configure the repository's `nuget` environment and create a NuGet trust
 repository and workflow before the first release. The workflow uses OIDC, runs the same tests and package smoke checks,
 uploads the artifacts, and pushes `.nupkg` and `.snupkg` files to NuGet.org.
 
-Use a SemVer value such as `1.0.0` for stable releases. Beta input may include a suffix such as `1.0.0-beta.1`; if the
+Use a SemVer value such as `1.1.0` for stable releases. Beta input may include a suffix such as `1.1.0-beta.1`; if the
 suffix is omitted, the workflow appends a run-number beta suffix.
+
+## OpenSSF Best Practices badge
+
+The root `.bestpractices.json` contains proposed answers backed by public repository evidence. It does not grant a
+badge by itself: an authorized maintainer must sign in to [OpenSSF Best Practices](https://www.bestpractices.dev/),
+add `https://github.com/gabisonia/PdfiumRaster.Orchestrator` as a Metal-series project, review every automated answer,
+and save the assessment. Do not accept a proposal if repository settings or actual maintainer practice do not support
+it.
+
+After registration assigns a numeric project ID, add the service's ID-based badge to `README.md`. Use **Save and
+continue** in the assessment after material process, security, test, or release changes so the service reloads
+`.bestpractices.json`. The OpenSSF Scorecard `CII-Best-Practices` check will discover the registered assessment through
+the repository URL; a README badge alone does not satisfy that check.

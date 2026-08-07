@@ -13,6 +13,9 @@
     <Project Path="samples/AspNetLifecycle/AspNetLifecycle.csproj" />
     <Project Path="samples/ParallelPageExport/ParallelPageExport.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/PdfiumRaster.Orchestrator.Benchmarks/PdfiumRaster.Orchestrator.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PdfiumRaster.Orchestrator.FakeWorker/PdfiumRaster.Orchestrator.FakeWorker.csproj" />
     <Project Path="tests/PdfiumRaster.Orchestrator.Tests/PdfiumRaster.Orchestrator.Tests.csproj" />

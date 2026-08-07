@@ -87,6 +87,12 @@ input/output chunks to 64 KiB. Reads continue until an entire frame has arrived;
 a disconnected or crashed worker. Unknown message kinds, invalid lengths, unexpected message ordering, and invalid
 bitmap metadata are rejected as protocol errors.
 
+Each persistent pipe endpoint owns one reusable five-byte header and one 64 KiB transfer buffer. Byte arrays, stream
+buffers, rendered pixels, and encoder buffers are written as array segments without per-chunk copies. Bitmap payloads
+are read directly into their final caller-owned pixel array; spool-file and caller-stream forwarding use the reusable
+transfer buffer. Pipe writes are flushed at handshake and complete logical request/response boundaries rather than
+after every frame. These are implementation details and do not change the version-three frame layout.
+
 The logical messages are:
 
 | Direction | Message | Purpose |
@@ -148,7 +154,7 @@ Output behavior depends on the requested target:
 
 | Output | Pipe traffic and memory behavior |
 | --- | --- |
-| `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, and returns a caller-owned `PdfBitmap`. A streaming batch wraps each result with its request position and page index and uses a capacity-one handoff. |
+| `PdfBitmap` | The worker sends a bitmap header and chunked pixel bytes. The orchestrator validates width, height, stride, and total byte count, allocates the final managed pixel array, reads chunks directly into it, and returns a caller-owned `PdfBitmap`. A streaming batch wraps each result with its request position and page index and uses a capacity-one handoff. |
 | Image path | The output path crosses in the request. The worker encodes to a uniquely named temporary file beside the destination, enforces the aggregate limit, and atomically replaces the destination; encoded bytes do not return through the pipe. A batch repeats this per mapped page. |
 | Output `Stream` | The worker encodes into a pipe-backed stream. Chunked encoded bytes return through the pipe and the orchestrator writes them to the caller-owned stream. The orchestrator never closes that output stream. |
 | Page count/sizes | Only bounded metadata frames return. Sizes are validated and accumulated in zero-based page order; no bitmap or encoded-output bytes are produced. |

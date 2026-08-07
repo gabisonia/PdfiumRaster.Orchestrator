@@ -92,6 +92,8 @@ internal static class Program
                 return 25;
             }
 
+            var request = WorkerProtocol.DeserializeRequest(frame.Payload);
+
             switch (mode)
             {
                 case "disconnect-mid-frame":
@@ -224,6 +226,74 @@ internal static class Program
                             WorkerMessage.Complete,
                             CancellationToken.None)
                         .ConfigureAwait(false);
+                    break;
+                case "echo-content":
+                    if (request.SourceKind != WorkerSourceKind.Content ||
+                        request.OutputKind is not (WorkerOutputKind.Bitmap or WorkerOutputKind.Stream))
+                    {
+                        return 31;
+                    }
+
+                    using (var received = new MemoryStream())
+                    {
+                        while (true)
+                        {
+                            var input = await WorkerProtocol.ReadFrameAsync(pipe, CancellationToken.None)
+                                .ConfigureAwait(false);
+                            if (input.Message == WorkerMessage.InputEnd)
+                            {
+                                break;
+                            }
+
+                            if (input.Message != WorkerMessage.InputChunk)
+                            {
+                                return 32;
+                            }
+
+                            await received.WriteAsync(input.Payload).ConfigureAwait(false);
+                        }
+
+                        var bytes = received.ToArray();
+                        if (bytes.Length == 0 || bytes.Length % sizeof(int) != 0)
+                        {
+                            return 33;
+                        }
+
+                        if (request.OutputKind == WorkerOutputKind.Bitmap)
+                        {
+                            await WorkerProtocol.WriteFrameAsync(
+                                    pipe,
+                                    WorkerMessage.BitmapHeader,
+                                    WorkerProtocol.SerializeBitmapHeader(
+                                        width: 1,
+                                        height: bytes.Length / sizeof(int),
+                                        stride: sizeof(int),
+                                        byteCount: bytes.Length),
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
+                        var offset = 0;
+                        while (offset < bytes.Length)
+                        {
+                            var count = Math.Min(WorkerProtocol.ChunkSize, bytes.Length - offset);
+                            var chunk = new byte[count];
+                            Buffer.BlockCopy(bytes, offset, chunk, 0, count);
+                            await WorkerProtocol.WriteFrameAsync(
+                                    pipe,
+                                    WorkerMessage.OutputChunk,
+                                    chunk,
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
+                            offset += count;
+                        }
+
+                        await WorkerProtocol.WriteEmptyFrameAsync(
+                                pipe,
+                                WorkerMessage.Complete,
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+
                     break;
                 case "valid-stream":
                     await WorkerProtocol.WriteFrameAsync(

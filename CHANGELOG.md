@@ -3,6 +3,23 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.1.0 - 2026-08-07
+
+### Changed
+
+- Reuse per-worker pipe framing and transfer buffers instead of allocating headers and 64 KiB payload arrays for
+  every input and output chunk.
+- Write byte-array, stream, bitmap, and encoded output segments directly and assemble returned bitmaps directly in
+  their final caller-owned pixel arrays.
+- Flush named pipes at handshake and logical request/response boundaries instead of after every frame while preserving
+  the private version-three wire format and existing timeout, cancellation, and failure behavior.
+
+### Documentation
+
+- Add repeatable 16 MiB transfer benchmarks and a stable-release comparison gate against `1.0.0`, requiring at least
+  50% lower framing allocations and no more than a 5% median end-to-end latency regression.
+- Add machine-readable OpenSSF Best Practices evidence and expand the documented contribution and review process.
+
 ## 1.0.0 - 2026-08-04
 
 ### Added
