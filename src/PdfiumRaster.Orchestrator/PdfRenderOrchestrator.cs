@@ -2663,8 +2663,11 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(startupTimeout);
                 var connectionTask = pipe.WaitForConnectionAsync(timeout.Token);
-                if (await Task.WhenAny(connectionTask, connection._processExited.Task).ConfigureAwait(false) !=
-                    connectionTask)
+                var startupSignal = await Task.WhenAny(connectionTask, connection._processExited.Task)
+                    .ConfigureAwait(false);
+                // A short-lived worker can connect and write its handshake before the exit notification wins
+                // this race. Preserve the buffered handshake so it can produce the more precise protocol error.
+                if (startupSignal != connectionTask && !connectionTask.IsCompleted && !pipe.IsConnected)
                 {
                     process.WaitForExit();
                     throw new PdfWorkerStartupException(

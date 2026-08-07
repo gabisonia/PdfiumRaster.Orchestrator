@@ -13,6 +13,8 @@ All notable changes to PdfiumRaster.Orchestrator are documented here. The projec
   their final caller-owned pixel arrays.
 - Flush named pipes at handshake and logical request/response boundaries instead of after every frame while preserving
   the private version-three wire format and existing timeout, cancellation, and failure behavior.
+- Preserve invalid-handshake protocol diagnostics when a short-lived worker exits immediately after connecting,
+  avoiding a macOS startup race that could misclassify the failure as a pre-connection exit.
 
 ### Documentation
 
