@@ -7,11 +7,14 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 1.0.0
+PACKAGE_VERSION ?= 1.1.0
 PACKAGE_ID ?= PdfiumRaster.Orchestrator
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
+BENCHMARK_PROJECT := benchmarks/PdfiumRaster.Orchestrator.Benchmarks/PdfiumRaster.Orchestrator.Benchmarks.csproj
+FAKE_WORKER_PROJECT := tests/PdfiumRaster.Orchestrator.FakeWorker/PdfiumRaster.Orchestrator.FakeWorker.csproj
+BASE_REF ?= 1.0.0
 
-.PHONY: help restore build test coverage test-local test-manual publish-workers pack inspect-package verify-package smoke-package smoke-slim-package smoke-slim-package-mismatch release-check clean
+.PHONY: help restore build test coverage benchmark performance-check test-local test-manual publish-workers pack inspect-package verify-package smoke-package smoke-slim-package smoke-slim-package-mismatch release-check clean
 
 help:
 	@printf '%s\n' \
@@ -20,6 +23,8 @@ help:
 		'  make build            Build the solution in Release mode' \
 		'  make test             Run automated tests, excluding local-only tests' \
 		'  make coverage         Run tests with enforced line and branch coverage thresholds' \
+		'  make benchmark        Run the current 16 MiB pipe-transfer benchmarks' \
+		'  make performance-check Compare transfer performance with BASE_REF (default: 1.0.0)' \
 		'  make test-local       Run all local-only tests' \
 		'  make test-manual PDF=<path> Render every PDF page for visual inspection' \
 		'  make publish-workers  Publish all supported self-contained workers' \
@@ -47,6 +52,37 @@ coverage:
 		--collect "XPlat Code Coverage" \
 		--results-directory $(ARTIFACTS_DIR)/coverage
 	bash eng/AssertCoverage.sh $(ARTIFACTS_DIR)/coverage 90 80
+
+benchmark:
+	dotnet build $(FAKE_WORKER_PROJECT) -c $(CONFIGURATION) --no-restore
+	PDFIUMRASTER_BENCHMARK_WORKER_PATH="$$(pwd)/tests/PdfiumRaster.Orchestrator.FakeWorker/bin/$(CONFIGURATION)/net10.0/PdfiumRaster.Orchestrator.FakeWorker.dll" \
+		dotnet run --project $(BENCHMARK_PROJECT) -c $(CONFIGURATION) -- \
+		--filter '*' --artifacts "$(ARTIFACTS_DIR)/benchmarks"
+
+performance-check:
+	@set -euo pipefail; \
+	repo="$$(pwd)"; \
+	git rev-parse --verify "$(BASE_REF)^{commit}" >/dev/null; \
+	tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	mkdir -p "$$tmpdir/baseline" "$$tmpdir/baseline/benchmarks/PdfiumRaster.Orchestrator.Benchmarks"; \
+	git archive "$(BASE_REF)" | tar -x -C "$$tmpdir/baseline"; \
+	cp "$$repo/Directory.Packages.props" "$$tmpdir/baseline/Directory.Packages.props"; \
+	cp "$$repo/src/PdfiumRaster.Orchestrator/PdfiumRaster.Orchestrator.csproj" \
+		"$$tmpdir/baseline/src/PdfiumRaster.Orchestrator/PdfiumRaster.Orchestrator.csproj"; \
+	cp "$$repo/benchmarks/PdfiumRaster.Orchestrator.Benchmarks/PdfiumRaster.Orchestrator.Benchmarks.csproj" \
+		"$$repo/benchmarks/PdfiumRaster.Orchestrator.Benchmarks/Program.cs" \
+		"$$repo/benchmarks/PdfiumRaster.Orchestrator.Benchmarks/packages.lock.json" \
+		"$$tmpdir/baseline/benchmarks/PdfiumRaster.Orchestrator.Benchmarks/"; \
+	dotnet build "$$repo/$(FAKE_WORKER_PROJECT)" -c $(CONFIGURATION) --no-restore; \
+	worker="$$repo/tests/PdfiumRaster.Orchestrator.FakeWorker/bin/$(CONFIGURATION)/net10.0/PdfiumRaster.Orchestrator.FakeWorker.dll"; \
+	PDFIUMRASTER_BENCHMARK_WORKER_PATH="$$worker" PDFIUMRASTER_BENCHMARK_BASELINE=1 dotnet run \
+		--project "$$tmpdir/baseline/benchmarks/PdfiumRaster.Orchestrator.Benchmarks/PdfiumRaster.Orchestrator.Benchmarks.csproj" \
+		-c $(CONFIGURATION) -- --filter '*' --artifacts "$$tmpdir/baseline-results"; \
+	PDFIUMRASTER_BENCHMARK_WORKER_PATH="$$worker" dotnet run --project "$$repo/$(BENCHMARK_PROJECT)" \
+		-c $(CONFIGURATION) -- --filter '*' --artifacts "$$tmpdir/candidate-results"; \
+	dotnet run --project "$$repo/$(BENCHMARK_PROJECT)" -c $(CONFIGURATION) --no-build -- \
+		compare "$$tmpdir/baseline-results" "$$tmpdir/candidate-results"
 
 test-local:
 	dotnet test $(SOLUTION) -c $(CONFIGURATION) --filter "Category=Local"
@@ -210,7 +246,7 @@ smoke-slim-package-mismatch: $(PACKAGE)
 	if ! grep -Fq 'does not match target runtime' <<<"$$output"; then printf '%s\n' "$$output" >&2; exit 1; fi; \
 	echo "Verified that PdfiumRaster.Orchestrator.$$rid rejects target runtime $$mismatch_rid."
 
-release-check: coverage pack verify-package inspect-package smoke-package smoke-slim-package smoke-slim-package-mismatch
+release-check: coverage performance-check pack verify-package inspect-package smoke-package smoke-slim-package smoke-slim-package-mismatch
 
 clean:
 	dotnet clean $(SOLUTION)

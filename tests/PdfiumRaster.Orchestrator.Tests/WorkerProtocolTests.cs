@@ -187,6 +187,62 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public async Task ProtocolStreamWritesArraySegmentsWithoutImplicitFlush()
+    {
+        using var stream = new TrackingWriteStream();
+        var protocol = new WorkerProtocolStream(stream);
+        var payload = new byte[] { 9, 1, 2, 3, 8 };
+
+        await protocol.WriteFrameAsync(
+            WorkerMessage.OutputChunk,
+            payload,
+            offset: 1,
+            count: 3,
+            CancellationToken.None);
+
+        Assert.Equal(Convert.FromHexString("0400000007010203"), stream.ToArray());
+        Assert.Equal(0, stream.FlushCount);
+
+        await protocol.FlushAsync(CancellationToken.None);
+        Assert.Equal(1, stream.FlushCount);
+    }
+
+    [Fact]
+    public async Task ProtocolStreamReadsPayloadDirectlyIntoDestinationAcrossFragmentedReads()
+    {
+        using var storage = new MemoryStream(Convert.FromHexString("0400000007010203"));
+        using var fragmented = new FragmentedReadStream(storage);
+        var protocol = new WorkerProtocolStream(fragmented);
+        var destination = new byte[] { 9, 9, 9, 9, 9 };
+
+        var header = await protocol.ReadFrameHeaderAsync(CancellationToken.None);
+        await protocol.ReadPayloadAsync(header, destination, 1, CancellationToken.None);
+
+        Assert.Equal(WorkerMessage.OutputChunk, header.Message);
+        Assert.Equal(3, header.PayloadLength);
+        Assert.Equal(new byte[] { 9, 1, 2, 3, 9 }, destination);
+    }
+
+    [Fact]
+    public async Task ProtocolStreamValidatesArraySegmentsAndDestinations()
+    {
+        using var stream = new MemoryStream(Convert.FromHexString("0400000007010203"));
+        var protocol = new WorkerProtocolStream(stream);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => protocol.WriteFrameAsync(
+                WorkerMessage.OutputChunk,
+                new byte[3],
+                offset: 2,
+                count: 2,
+                CancellationToken.None));
+
+        var header = await protocol.ReadFrameHeaderAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => protocol.ReadPayloadAsync(header, new byte[2], 0, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task FrameReaderRejectsOversizedLength()
     {
         var bytes = BitConverter.GetBytes(WorkerProtocol.MaximumControlPayload + 2);
@@ -423,5 +479,16 @@ public sealed class WorkerProtocolTests
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class TrackingWriteStream : MemoryStream
+    {
+        internal int FlushCount { get; private set; }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            FlushCount++;
+            return Task.CompletedTask;
+        }
     }
 }

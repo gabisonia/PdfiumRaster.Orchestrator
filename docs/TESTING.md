@@ -21,6 +21,25 @@ branch coverage for the application-facing library. Generated reports remain out
 regression floor rather than a target: new behavior should cover every reachable success, validation, cancellation,
 failure, ownership, and lifecycle path it introduces.
 
+## Performance benchmarks
+
+Run the candidate's deterministic 16 MiB byte-array-to-bitmap, stream-to-encoded-stream, framed-write, and framed-read
+benchmarks with:
+
+```bash
+make benchmark
+```
+
+For release qualification, compare the same workloads with the `1.0.0` source on the same machine:
+
+```bash
+make performance-check BASE_REF=1.0.0
+```
+
+The comparison excludes worker startup, uses one persistent protocol-version-three worker, and fails unless framed
+read and write allocations are at most 50% of baseline and both end-to-end medians are at most 105% of baseline.
+Ordinary CI omits this hardware-sensitive check; stable publishing and `make release-check` enforce it.
+
 ## Coverage matrix
 
 | Area | Automated coverage |
@@ -35,7 +54,7 @@ failure, ownership, and lifecycle path it introduces.
 | Hosting and health | Singleton and hosted-service registration, cancellable async startup, pre-start request rejection, automatic logging, graceful and canceled host shutdown, async disposal, public status snapshots, and starting, healthy, degraded, recovered, stopping, stopped, and terminal health states. |
 | Worker failures | Startup cancellation, exit, and timeout; invalid handshake, crash, bounded standard error, hard request timeout, protocol failure, early-stream-exit replacement, successful replacement, and exhausted replacement attempts. |
 | Exceptions | Public constructors and exposed crash, timeout, remote-error, startup, queue-full, and protocol-error properties. |
-| Pipe protocol | Golden version-three vectors, operation, batch, resource-limit, page-count, and page-size fields; fragmented frames, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |
+| Pipe protocol | Golden version-three vectors, operation, batch, resource-limit, page-count, and page-size fields; fragmented frames, segmented direct reads and writes, multi-chunk transfers, malformed or oversized frames, handshake validation, request/options round trips, and valid and invalid response sequences. |
 | Diagnostics | Stable EventSource identity, level, and payload shape; structured log lifecycle events; correlated render and inspection activities; operational metric emission; and sensitive-data exclusion across every signal. |
 | Packaging | Required NuGet assets, all-runtime and one-worker RID packages, `netstandard2.1` consumption, and both package shapes rendering on Linux, Windows, and macOS. |
 

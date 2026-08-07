@@ -169,6 +169,10 @@ large PDFs; byte-array and stream inputs must cross a named pipe and are spooled
 and total-output byte limits fail with `PdfRenderResourceLimitException`; they are unlimited by default for backward
 compatibility.
 
+Pipe endpoints reuse bounded framing buffers: in-memory input and output chunks are transferred without allocating a
+new 64 KiB array per frame, and returned bitmap chunks are assembled directly in the final caller-owned pixel array.
+This reduces managed allocation pressure without changing stream ownership or the private protocol.
+
 `WorkerCount` defaults to the smaller of four and the logical processor count, and cannot exceed that processor count.
 `RequestTimeout` is disabled by default. It starts when a request is dispatched and covers input transfer, rendering,
 encoding, and output transfer; it does not include time spent waiting in the queue. A timeout promptly faults the
@@ -255,3 +259,10 @@ See [API usage](docs/API.md), [architecture](docs/ARCHITECTURE.md), [release his
 [support](SUPPORT.md), and [releasing](docs/RELEASING.md) for more detail.
 For worker startup, pipe, crash, timeout, filesystem, and diagnostic guidance, see
 [troubleshooting](docs/TROUBLESHOOTING.md).
+
+## Project community
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing or submitting a change.
+- Use [support guidance](SUPPORT.md) for defects, feature proposals, and usage questions.
+- Report suspected vulnerabilities privately by following the [security policy](SECURITY.md).
+- Review the machine-readable [OpenSSF Best Practices evidence](.bestpractices.json) used during badge assessment.

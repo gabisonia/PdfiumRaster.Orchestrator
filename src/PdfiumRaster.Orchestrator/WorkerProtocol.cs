@@ -54,6 +54,161 @@ internal readonly struct WorkerFrame
     internal byte[] Payload { get; }
 }
 
+internal readonly struct WorkerFrameHeader
+{
+    internal WorkerFrameHeader(WorkerMessage message, int payloadLength)
+    {
+        Message = message;
+        PayloadLength = payloadLength;
+    }
+
+    internal WorkerMessage Message { get; }
+    internal int PayloadLength { get; }
+}
+
+internal sealed class WorkerProtocolStream
+{
+    private const int HeaderSize = sizeof(int) + sizeof(byte);
+    private readonly Stream _stream;
+    private readonly byte[] _header = new byte[HeaderSize];
+    private readonly byte[] _transferBuffer = new byte[WorkerProtocol.ChunkSize];
+
+    internal WorkerProtocolStream(Stream stream)
+    {
+        _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    }
+
+    internal byte[] TransferBuffer => _transferBuffer;
+
+    internal Task WriteFrameAsync(
+        WorkerMessage message,
+        byte[] payload,
+        CancellationToken cancellationToken)
+    {
+        if (payload is null)
+        {
+            throw new ArgumentNullException(nameof(payload));
+        }
+
+        return WriteFrameAsync(message, payload, 0, payload.Length, cancellationToken);
+    }
+
+    internal async Task WriteFrameAsync(
+        WorkerMessage message,
+        byte[] payload,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        if (payload is null)
+        {
+            throw new ArgumentNullException(nameof(payload));
+        }
+
+        if (offset < 0 || count < 0 || offset > payload.Length - count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), "The payload segment is outside the array.");
+        }
+
+        WorkerProtocol.ValidatePayloadLength(message, count);
+        BinaryPrimitives.WriteInt32LittleEndian(_header.AsSpan(0, sizeof(int)), checked(count + 1));
+        _header[sizeof(int)] = (byte)message;
+        await _stream.WriteAsync(_header, 0, _header.Length, cancellationToken).ConfigureAwait(false);
+        if (count != 0)
+        {
+            await _stream.WriteAsync(payload, offset, count, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal Task WriteEmptyFrameAsync(WorkerMessage message, CancellationToken cancellationToken)
+    {
+        return WriteFrameAsync(message, Array.Empty<byte>(), cancellationToken);
+    }
+
+    internal Task FlushAsync(CancellationToken cancellationToken)
+    {
+        return _stream.FlushAsync(cancellationToken);
+    }
+
+    internal async Task<WorkerFrameHeader> ReadFrameHeaderAsync(CancellationToken cancellationToken)
+    {
+        await ReadExactlyAsync(_header, 0, sizeof(int), cancellationToken).ConfigureAwait(false);
+        var frameLength = BinaryPrimitives.ReadInt32LittleEndian(_header.AsSpan(0, sizeof(int)));
+        if (frameLength < 1 || frameLength > WorkerProtocol.MaximumControlPayload + 1)
+        {
+            throw new PdfWorkerProtocolException($"Invalid worker frame length {frameLength}.");
+        }
+
+        await ReadExactlyAsync(_header, sizeof(int), sizeof(byte), cancellationToken).ConfigureAwait(false);
+        var messageByte = _header[sizeof(int)];
+        var message = (WorkerMessage)messageByte;
+        if (!Enum.IsDefined(typeof(WorkerMessage), message))
+        {
+            throw new PdfWorkerProtocolException($"Unknown worker message {messageByte}.");
+        }
+
+        var payloadLength = frameLength - 1;
+        WorkerProtocol.ValidatePayloadLength(message, payloadLength);
+        return new WorkerFrameHeader(message, payloadLength);
+    }
+
+    internal async Task<WorkerFrame> ReadFrameAsync(CancellationToken cancellationToken)
+    {
+        var header = await ReadFrameHeaderAsync(cancellationToken).ConfigureAwait(false);
+        return new WorkerFrame(
+            header.Message,
+            await ReadPayloadAsync(header, cancellationToken).ConfigureAwait(false));
+    }
+
+    internal async Task<byte[]> ReadPayloadAsync(
+        WorkerFrameHeader header,
+        CancellationToken cancellationToken)
+    {
+        var payload = new byte[header.PayloadLength];
+        await ReadPayloadAsync(header, payload, 0, cancellationToken).ConfigureAwait(false);
+        return payload;
+    }
+
+    internal Task ReadPayloadAsync(
+        WorkerFrameHeader header,
+        byte[] destination,
+        int offset,
+        CancellationToken cancellationToken)
+    {
+        if (destination is null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        if (offset < 0 || offset > destination.Length - header.PayloadLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), "The frame payload does not fit in the destination.");
+        }
+
+        return ReadExactlyAsync(destination, offset, header.PayloadLength, cancellationToken);
+    }
+
+    private async Task ReadExactlyAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        var end = checked(offset + count);
+        while (offset < end)
+        {
+            var read = await _stream.ReadAsync(buffer, offset, end - offset, cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new EndOfStreamException("The worker pipe closed before a complete frame was received.");
+            }
+
+            offset += read;
+        }
+    }
+}
+
 internal sealed class WorkerRequest
 {
     internal WorkerSourceKind SourceKind { get; set; }
@@ -85,24 +240,9 @@ internal static class WorkerProtocol
         byte[] payload,
         CancellationToken cancellationToken)
     {
-        var maximum = message is WorkerMessage.InputChunk or WorkerMessage.OutputChunk
-            ? MaximumChunkPayload
-            : MaximumControlPayload;
-        if (payload.Length > maximum)
-        {
-            throw new PdfWorkerProtocolException($"The {message} payload exceeds the protocol limit.");
-        }
-
-        var header = new byte[5];
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(0, 4), checked(payload.Length + 1));
-        header[4] = (byte)message;
-        await stream.WriteAsync(header, 0, header.Length, cancellationToken).ConfigureAwait(false);
-        if (payload.Length != 0)
-        {
-            await stream.WriteAsync(payload, 0, payload.Length, cancellationToken).ConfigureAwait(false);
-        }
-
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        var protocol = new WorkerProtocolStream(stream);
+        await protocol.WriteFrameAsync(message, payload, cancellationToken).ConfigureAwait(false);
+        await protocol.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static Task WriteEmptyFrameAsync(
@@ -115,38 +255,18 @@ internal static class WorkerProtocol
 
     internal static async Task<WorkerFrame> ReadFrameAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var lengthBytes = new byte[4];
-        await ReadExactlyAsync(stream, lengthBytes, cancellationToken).ConfigureAwait(false);
-        var frameLength = BinaryPrimitives.ReadInt32LittleEndian(lengthBytes);
-        if (frameLength < 1 || frameLength > MaximumControlPayload + 1)
-        {
-            throw new PdfWorkerProtocolException($"Invalid worker frame length {frameLength}.");
-        }
+        return await new WorkerProtocolStream(stream).ReadFrameAsync(cancellationToken).ConfigureAwait(false);
+    }
 
-        var messageByte = new byte[1];
-        await ReadExactlyAsync(stream, messageByte, cancellationToken).ConfigureAwait(false);
-        var message = (WorkerMessage)messageByte[0];
-        if (!Enum.IsDefined(typeof(WorkerMessage), message))
-        {
-            throw new PdfWorkerProtocolException($"Unknown worker message {messageByte[0]}.");
-        }
-
-        var payloadLength = frameLength - 1;
+    internal static void ValidatePayloadLength(WorkerMessage message, int payloadLength)
+    {
         var maximum = message is WorkerMessage.InputChunk or WorkerMessage.OutputChunk
             ? MaximumChunkPayload
             : MaximumControlPayload;
-        if (payloadLength > maximum)
+        if (payloadLength < 0 || payloadLength > maximum)
         {
             throw new PdfWorkerProtocolException($"The {message} payload exceeds the protocol limit.");
         }
-
-        var payload = new byte[payloadLength];
-        if (payloadLength != 0)
-        {
-            await ReadExactlyAsync(stream, payload, cancellationToken).ConfigureAwait(false);
-        }
-
-        return new WorkerFrame(message, payload);
     }
 
     internal static byte[] SerializeHello(string token)
@@ -325,22 +445,6 @@ internal static class WorkerProtocol
     internal static (string Resource, long Limit, long Observed) DeserializeResourceLimit(byte[] payload)
     {
         return Deserialize(payload, reader => (reader.ReadString(), reader.ReadInt64(), reader.ReadInt64()));
-    }
-
-    private static async Task ReadExactlyAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
-    {
-        var offset = 0;
-        while (offset < buffer.Length)
-        {
-            var read = await stream.ReadAsync(buffer, offset, buffer.Length - offset, cancellationToken)
-                .ConfigureAwait(false);
-            if (read == 0)
-            {
-                throw new EndOfStreamException("The worker pipe closed before a complete frame was received.");
-            }
-
-            offset += read;
-        }
     }
 
     private static byte[] Serialize(Action<BinaryWriter> write)

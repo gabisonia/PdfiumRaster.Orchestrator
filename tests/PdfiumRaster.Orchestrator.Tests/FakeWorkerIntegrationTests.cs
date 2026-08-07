@@ -173,6 +173,30 @@ public sealed class FakeWorkerIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task MultiChunkByteAndStreamInputsRoundTripDirectlyIntoBitmapStorage()
+    {
+        SetMode("echo-content");
+        var bytes = Enumerable.Range(0, WorkerProtocol.ChunkSize * 2 + sizeof(int))
+            .Select(index => (byte)index)
+            .ToArray();
+        await using var orchestrator = new PdfRenderOrchestrator(CreateOptions());
+
+        var byteBitmap = await orchestrator.RenderPageAsync(bytes, 0);
+        using var input = new MemoryStream(bytes, writable: false);
+        var streamBitmap = await orchestrator.RenderPageAsync(input, 0, leaveOpen: true);
+        using var streamInput = new MemoryStream(bytes, writable: false);
+        using var output = new MemoryStream();
+        await orchestrator.SavePageAsync(streamInput, 0, output, leaveOpen: true);
+
+        Assert.Equal(bytes, byteBitmap.Pixels);
+        Assert.Equal(bytes, streamBitmap.Pixels);
+        Assert.Equal(bytes, output.ToArray());
+        Assert.True(input.CanRead);
+        Assert.True(streamInput.CanRead);
+        await orchestrator.CompleteAsync();
+    }
+
+    [Fact]
     public async Task FakeWorkerCoversSuccessfulDocumentInspectionResponses()
     {
         SetMode("valid-page-count");

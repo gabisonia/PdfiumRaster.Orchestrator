@@ -12,12 +12,12 @@ if [[ -z "$coverage_file" ]]; then
     exit 1
 fi
 
-coverage_element="$(grep -m 1 '<coverage ' "$coverage_file")"
-line_rate="$(sed -n 's/.*line-rate="\([^"]*\)".*/\1/p' <<<"$coverage_element")"
-branch_rate="$(sed -n 's/.*branch-rate="\([^"]*\)".*/\1/p' <<<"$coverage_element")"
+package_element="$(grep -m 1 '<package name="PdfiumRaster.Orchestrator" ' "$coverage_file")"
+line_rate="$(sed -n 's/.*line-rate="\([^"]*\)".*/\1/p' <<<"$package_element")"
+branch_rate="$(sed -n 's/.*branch-rate="\([^"]*\)".*/\1/p' <<<"$package_element")"
 
 if [[ -z "$line_rate" || -z "$branch_rate" ]]; then
-    echo "Could not read line-rate and branch-rate from $coverage_file." >&2
+    echo "Could not read PdfiumRaster.Orchestrator coverage rates from $coverage_file." >&2
     exit 1
 fi
 

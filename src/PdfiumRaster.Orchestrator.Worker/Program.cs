@@ -60,22 +60,23 @@ internal static class Program
                 args[0],
                 PipeDirection.InOut,
                 WorkerProtocol.LocalPipeOptions);
+            var protocol = new WorkerProtocolStream(pipe);
             using var startupCancellation = new CancellationTokenSource(startupTimeout);
             await pipe.ConnectAsync(startupCancellation.Token).ConfigureAwait(false);
-            await WorkerProtocol.WriteFrameAsync(
-                    pipe,
+            await protocol.WriteFrameAsync(
                     WorkerMessage.Hello,
                     WorkerProtocol.SerializeHello(token),
                     startupCancellation.Token)
                 .ConfigureAwait(false);
+            await protocol.FlushAsync(startupCancellation.Token).ConfigureAwait(false);
 
-            var ready = await WorkerProtocol.ReadFrameAsync(pipe, startupCancellation.Token).ConfigureAwait(false);
+            var ready = await protocol.ReadFrameAsync(startupCancellation.Token).ConfigureAwait(false);
             WorkerProtocol.ValidateReady(ready);
 
             using var pdfium = PdfiumLibrary.Initialize();
             while (true)
             {
-                var frame = await WorkerProtocol.ReadFrameAsync(pipe, CancellationToken.None).ConfigureAwait(false);
+                var frame = await protocol.ReadFrameAsync(CancellationToken.None).ConfigureAwait(false);
                 if (frame.Message == WorkerMessage.Shutdown)
                 {
                     return 0;
@@ -88,7 +89,7 @@ internal static class Program
                 }
 
                 var request = WorkerProtocol.DeserializeRequest(frame.Payload);
-                await ProcessRequestAsync(pipe, request, temporaryDirectory).ConfigureAwait(false);
+                await ProcessRequestAsync(protocol, request, temporaryDirectory).ConfigureAwait(false);
             }
         }
         catch (EndOfStreamException)
@@ -117,7 +118,7 @@ internal static class Program
     }
 
     private static async Task ProcessRequestAsync(
-        Stream pipe,
+        WorkerProtocolStream protocol,
         WorkerRequest request,
         string temporaryDirectory)
     {
@@ -130,7 +131,7 @@ internal static class Program
                 temporaryPath = Path.Combine(
                     temporaryDirectory,
                     $"pdfium-raster-worker-{Environment.ProcessId}-{Guid.NewGuid():N}.pdf");
-                await ReceiveInputAsync(pipe, temporaryPath, request.MaximumInputBytes).ConfigureAwait(false);
+                await ReceiveInputAsync(protocol, temporaryPath, request.MaximumInputBytes).ConfigureAwait(false);
                 pdfPath = temporaryPath;
             }
 
@@ -150,8 +151,7 @@ internal static class Program
             if (request.OperationKind == WorkerOperationKind.GetPageCount)
             {
                 using var session = PdfRenderSession.Open(pdfPath, request.Password);
-                await WorkerProtocol.WriteFrameAsync(
-                        pipe,
+                await protocol.WriteFrameAsync(
                         WorkerMessage.PageCount,
                         WorkerProtocol.SerializePageCount(session.PageCount),
                         CancellationToken.None)
@@ -160,16 +160,14 @@ internal static class Program
             else if (request.OperationKind == WorkerOperationKind.GetPageSizes)
             {
                 var pageSizes = PdfImageConverter.GetPageSizes(pdfPath, request.Password);
-                await WorkerProtocol.WriteFrameAsync(
-                        pipe,
+                await protocol.WriteFrameAsync(
                         WorkerMessage.PageCount,
                         WorkerProtocol.SerializePageCount(pageSizes.Count),
                         CancellationToken.None)
                     .ConfigureAwait(false);
                 foreach (var pageSize in pageSizes)
                 {
-                    await WorkerProtocol.WriteFrameAsync(
-                            pipe,
+                    await protocol.WriteFrameAsync(
                             WorkerMessage.PageSize,
                             WorkerProtocol.SerializePageSize(pageSize),
                             CancellationToken.None)
@@ -194,7 +192,7 @@ internal static class Program
                         foreach (var pageIndex in pageIndexes)
                         {
                             totalBitmapBytes = await RenderBitmapAsync(
-                                    pipe,
+                                    protocol,
                                     session,
                                     pageIndex,
                                     request,
@@ -233,7 +231,7 @@ internal static class Program
                             throw new PdfWorkerProtocolException("Batch stream output is not supported.");
                         }
 
-                        await using (var output = new FramedOutputStream(pipe, request.MaximumOutputBytes))
+                        await using (var output = new FramedOutputStream(protocol, request.MaximumOutputBytes))
                         {
                             session.SavePage(pageIndexes[0], output, request.Options);
                         }
@@ -248,31 +246,32 @@ internal static class Program
                 throw new PdfWorkerProtocolException($"Unsupported operation kind {request.OperationKind}.");
             }
 
-            await WorkerProtocol.WriteEmptyFrameAsync(pipe, WorkerMessage.Complete, CancellationToken.None)
+            await protocol.WriteEmptyFrameAsync(WorkerMessage.Complete, CancellationToken.None)
                 .ConfigureAwait(false);
+            await protocol.FlushAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
             if (exception is PdfRenderResourceLimitException resourceLimit)
             {
-                await WorkerProtocol.WriteFrameAsync(
-                        pipe,
+                await protocol.WriteFrameAsync(
                         WorkerMessage.ResourceLimit,
                         WorkerProtocol.SerializeResourceLimit(resourceLimit),
                         CancellationToken.None)
                     .ConfigureAwait(false);
+                await protocol.FlushAsync(CancellationToken.None).ConfigureAwait(false);
                 return;
             }
 
             var safeException = exception.Message.Length <= 64 * 1024
                 ? exception
                 : new InvalidOperationException(exception.Message.Substring(0, 64 * 1024));
-            await WorkerProtocol.WriteFrameAsync(
-                    pipe,
+            await protocol.WriteFrameAsync(
                     WorkerMessage.Error,
                     WorkerProtocol.SerializeError(safeException),
                     CancellationToken.None)
                 .ConfigureAwait(false);
+            await protocol.FlushAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -290,7 +289,10 @@ internal static class Program
         }
     }
 
-    private static async Task ReceiveInputAsync(Stream pipe, string temporaryPath, long? maximumInputBytes)
+    private static async Task ReceiveInputAsync(
+        WorkerProtocolStream protocol,
+        string temporaryPath,
+        long? maximumInputBytes)
     {
         await using var file = new FileStream(
             temporaryPath,
@@ -302,28 +304,39 @@ internal static class Program
         long total = 0;
         while (true)
         {
-            var frame = await WorkerProtocol.ReadFrameAsync(pipe, CancellationToken.None).ConfigureAwait(false);
-            if (frame.Message == WorkerMessage.InputEnd)
+            var header = await protocol.ReadFrameHeaderAsync(CancellationToken.None).ConfigureAwait(false);
+            if (header.Message == WorkerMessage.InputEnd)
             {
+                if (header.PayloadLength != 0)
+                {
+                    throw new PdfWorkerProtocolException("The input-end frame must have an empty payload.");
+                }
+
                 break;
             }
 
-            if (frame.Message != WorkerMessage.InputChunk)
+            if (header.Message != WorkerMessage.InputChunk)
             {
                 throw new PdfWorkerProtocolException(
-                    $"Expected PDF input bytes, but received {frame.Message}.");
+                    $"Expected PDF input bytes, but received {header.Message}.");
             }
 
-            total = checked(total + frame.Payload.Length);
+            total = checked(total + header.PayloadLength);
             ThrowIfResourceLimitExceeded("input bytes", maximumInputBytes, total);
-            await file.WriteAsync(frame.Payload, 0, frame.Payload.Length).ConfigureAwait(false);
+            await protocol.ReadPayloadAsync(
+                    header,
+                    protocol.TransferBuffer,
+                    0,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            await file.WriteAsync(protocol.TransferBuffer, 0, header.PayloadLength).ConfigureAwait(false);
         }
 
         await file.FlushAsync().ConfigureAwait(false);
     }
 
     private static async Task<long> RenderBitmapAsync(
-        Stream pipe,
+        WorkerProtocolStream protocol,
         PdfRenderSession session,
         int pageIndex,
         WorkerRequest request,
@@ -333,8 +346,7 @@ internal static class Program
         ThrowIfResourceLimitExceeded("bitmap bytes", request.MaximumBitmapBytes, bitmap.Pixels.LongLength);
         totalBytes = checked(totalBytes + bitmap.Pixels.LongLength);
         ThrowIfResourceLimitExceeded("output bytes", request.MaximumOutputBytes, totalBytes);
-        await WorkerProtocol.WriteFrameAsync(
-                pipe,
+        await protocol.WriteFrameAsync(
                 WorkerMessage.BitmapHeader,
                 WorkerProtocol.SerializeBitmapHeader(
                     bitmap.Width,
@@ -348,12 +360,11 @@ internal static class Program
         while (offset < bitmap.Pixels.Length)
         {
             var count = Math.Min(WorkerProtocol.ChunkSize, bitmap.Pixels.Length - offset);
-            var chunk = new byte[count];
-            Buffer.BlockCopy(bitmap.Pixels, offset, chunk, 0, count);
-            await WorkerProtocol.WriteFrameAsync(
-                    pipe,
+            await protocol.WriteFrameAsync(
                     WorkerMessage.OutputChunk,
-                    chunk,
+                    bitmap.Pixels,
+                    offset,
+                    count,
                     CancellationToken.None)
                 .ConfigureAwait(false);
             offset += count;
@@ -412,13 +423,13 @@ internal static class Program
 
     private sealed class FramedOutputStream : Stream
     {
-        private readonly Stream _pipe;
+        private readonly WorkerProtocolStream _protocol;
         private readonly long? _maximumBytes;
         private long _bytesWritten;
 
-        internal FramedOutputStream(Stream pipe, long? maximumBytes)
+        internal FramedOutputStream(WorkerProtocolStream protocol, long? maximumBytes)
         {
-            _pipe = pipe;
+            _protocol = protocol;
             _maximumBytes = maximumBytes;
         }
 
@@ -435,12 +446,12 @@ internal static class Program
 
         public override void Flush()
         {
-            _pipe.Flush();
+            _protocol.FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public override Task FlushAsync(CancellationToken cancellationToken)
         {
-            return _pipe.FlushAsync(cancellationToken);
+            return _protocol.FlushAsync(cancellationToken);
         }
 
         public override void Write(byte[] buffer, int offset, int count)
@@ -459,12 +470,11 @@ internal static class Program
             while (count > 0)
             {
                 var chunkLength = Math.Min(WorkerProtocol.ChunkSize, count);
-                var chunk = new byte[chunkLength];
-                Buffer.BlockCopy(buffer, offset, chunk, 0, chunkLength);
-                await WorkerProtocol.WriteFrameAsync(
-                        _pipe,
+                await _protocol.WriteFrameAsync(
                         WorkerMessage.OutputChunk,
-                        chunk,
+                        buffer,
+                        offset,
+                        chunkLength,
                         cancellationToken)
                     .ConfigureAwait(false);
                 offset += chunkLength;
