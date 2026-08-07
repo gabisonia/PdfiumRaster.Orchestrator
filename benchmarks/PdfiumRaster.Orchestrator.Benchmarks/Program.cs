@@ -89,7 +89,7 @@ internal static class Program
 
 [MemoryDiagnoser]
 [JsonExporterAttribute.FullCompressed]
-[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10, invocationCount: 1)]
+[SimpleJob(launchCount: 1, warmupCount: 5, iterationCount: 15, invocationCount: 8)]
 public class PipeTransferBenchmarks
 {
     private const int PayloadSize = 16 * 1024 * 1024;
