@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" VersionOverride="10.0.11" />
     <PackageReference Include="PdfiumRaster" />
     <ProjectReference Include="..\..\src\PdfiumRaster.Orchestrator\PdfiumRaster.Orchestrator.csproj" />
   </ItemGroup>
