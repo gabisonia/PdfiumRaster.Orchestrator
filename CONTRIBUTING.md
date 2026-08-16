@@ -21,6 +21,16 @@ changes should receive human review when another maintainer is available; author
 record why a finding does not apply. Release builds should remain warning-free. Resolve CodeQL findings before merge
 or document why a finding is not exploitable or does not apply.
 
+### Dependency updates
+
+Dependabot checks NuGet packages and pinned GitHub Actions dependencies weekly. It may keep up to five pull requests
+open for each dependency ecosystem. Review and merge those updates through the normal pull-request and CI process;
+security-sensitive updates may be handled sooner under [SECURITY.md](SECURITY.md).
+
+NuGet versions are centrally managed in `Directory.Packages.props`. When a package version changes, regenerate and
+commit every affected `packages.lock.json` file as described in the
+[testing and coverage guide](docs/TESTING.md#testing-and-coverage).
+
 ## Coding and compatibility standards
 
 Keep the client library compatible with `netstandard2.1`. Keep worker/protocol changes backward compatible and add
