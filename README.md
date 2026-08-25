@@ -22,7 +22,7 @@ The orchestrator owns a bidirectional `NamedPipeServerStream`, and its child wor
 requests, in-memory inputs, and results. The roles, framing, data flow, failure handling, and trust boundary are
 described in the [architecture guide](docs/ARCHITECTURE.md#named-pipe-roles).
 
-The package depends on `PdfiumRaster` versions from 2.0.1 up to, but not including, 3.0.0. Installing the orchestrator
+The package depends on `PdfiumRaster` versions from 2.0.4 up to, but not including, 3.0.0. Installing the orchestrator
 therefore installs a compatible core rendering library automatically while allowing the two packages to release
 independently.
 
