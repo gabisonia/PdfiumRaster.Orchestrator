@@ -3,6 +3,13 @@
 All notable changes to PdfiumRaster.Orchestrator are documented here. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.1.1 - 2026-08-25
+
+### Changed
+
+- Raise the minimum compatible `PdfiumRaster` version from 2.0.1 to 2.0.4 and align
+  `System.Threading.Channels` with the rendering dependency's 10.0.11 requirement.
+
 ## 1.1.0 - 2026-08-07
 
 ### Changed

@@ -7,7 +7,7 @@ CONFIGURATION := Release
 ARTIFACTS_DIR := artifacts
 WORKER_ARTIFACTS_DIR := $(ARTIFACTS_DIR)/workers
 WORKER_RIDS := win-x86 win-x64 win-arm64 linux-arm linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64
-PACKAGE_VERSION ?= 1.1.0
+PACKAGE_VERSION ?= 1.1.1
 PACKAGE_ID ?= PdfiumRaster.Orchestrator
 PACKAGE := $(ARTIFACTS_DIR)/PdfiumRaster.Orchestrator.$(PACKAGE_VERSION).nupkg
 BENCHMARK_PROJECT := benchmarks/PdfiumRaster.Orchestrator.Benchmarks/PdfiumRaster.Orchestrator.Benchmarks.csproj
@@ -140,7 +140,7 @@ verify-package: $(PACKAGE)
 		require_entry "tools/$$rid/$$worker"; \
 	done; \
 	nuspec="$$(unzip -p "$(PACKAGE)" PdfiumRaster.Orchestrator.nuspec)"; \
-	if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.1, ?3\.0\.0\)"' <<<"$$nuspec"; then \
+	if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.4, ?3\.0\.0\)"' <<<"$$nuspec"; then \
 		echo 'The PdfiumRaster dependency range is missing or unexpected.' >&2; \
 		exit 1; \
 	fi; \
@@ -158,7 +158,7 @@ verify-package: $(PACKAGE)
 		worker_count="$$(grep -Ec '^tools/.*/PdfiumRaster\.Orchestrator\.Worker(\.exe)?$$' <<<"$$entries")"; \
 		if [[ "$$worker_count" -ne 1 ]]; then echo "$$package must contain exactly one worker, found $$worker_count" >&2; exit 1; fi; \
 		nuspec="$$(unzip -p "$$package" '*.nuspec')"; \
-		if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.1, ?3\.0\.0\)"' <<<"$$nuspec"; then echo "PdfiumRaster dependency range is unexpected in $$package" >&2; exit 1; fi; \
+		if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.4, ?3\.0\.0\)"' <<<"$$nuspec"; then echo "PdfiumRaster dependency range is unexpected in $$package" >&2; exit 1; fi; \
 	done; \
 	echo 'Verified all RID-specific packages.'
 
