@@ -4,11 +4,11 @@
     "net10.0": {
       "OpenTelemetry.Exporter.Console": {
         "type": "Direct",
-        "requested": "[1.17.0, )",
-        "resolved": "1.17.0",
-        "contentHash": "sSoCa2DMCkw7tQabiVduwKWVyg9ungCiwh+0JuDPODF6CuYvR+OCuJwqcbzJsTMecWQrbgL8OYWAt3GC5tJGhw==",
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "OLH5WEH7fmKl8Vkg7w+x2OQySQYhLID1ulQQpn+UAVK7oCqo8Rl5IfOXuoCJ3DB7SiT9HYYpJOQgyNg+CtYCAg==",
         "dependencies": {
-          "OpenTelemetry": "1.17.0"
+          "OpenTelemetry": "1.18.0"
         }
       },
       "OpenTelemetry.Extensions.Hosting": {
