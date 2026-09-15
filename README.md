@@ -262,6 +262,11 @@ For worker startup, pipe, crash, timeout, filesystem, and diagnostic guidance, s
 
 ## Project community
 
+Dependency maintenance uses one weekly grouped PR for GitHub Actions and one for NuGet, including major, minor, and
+patch updates. Security fixes use separate `security` groups as alerts arrive; GitHub groups these per ecosystem,
+so simultaneous vulnerable NuGet packages and Actions can produce two security PRs. Keep Dependabot alerts and
+security updates enabled in repository settings. The rules live in [.github/dependabot.yml](.github/dependabot.yml).
+
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing or submitting a change.
 - Use [support guidance](SUPPORT.md) for defects, feature proposals, and usage questions.
 - Report suspected vulnerabilities privately by following the [security policy](SECURITY.md).
