@@ -23,9 +23,12 @@ or document why a finding is not exploitable or does not apply.
 
 ### Dependency updates
 
-Dependabot checks NuGet packages and pinned GitHub Actions dependencies weekly. It may keep up to five pull requests
-open for each dependency ecosystem. Review and merge those updates through the normal pull-request and CI process;
-security-sensitive updates may be handled sooner under [SECURITY.md](SECURITY.md).
+Dependabot checks NuGet packages and pinned GitHub Actions dependencies weekly. Each ecosystem has one group covering
+all version updates and a limit of one open version-update PR. Security updates use separate `security` groups as
+alerts arrive and require Dependabot alerts and security updates to be enabled in repository settings. GitHub groups
+security fixes per ecosystem, so simultaneous NuGet and Actions vulnerabilities can produce two security PRs.
+Review and merge updates through the normal pull-request and CI process; security-sensitive updates may be handled
+sooner under [SECURITY.md](SECURITY.md).
 
 NuGet versions are centrally managed in `Directory.Packages.props`. When a package version changes, regenerate and
 commit every affected `packages.lock.json` file as described in the
