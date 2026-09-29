@@ -2,6 +2,8 @@
 
 PdfiumRaster.Orchestrator releases independently from PdfiumRaster. Its centrally managed `PdfiumRaster` dependency
 range is the compatibility contract and must be reviewed whenever either package changes its public API.
+When updating that range, regenerate every solution lock file with `dotnet restore PdfiumRaster.Orchestrator.slnx
+--force-evaluate`, update the range checks in `make verify-package`, and align the dependency range in `README.md`.
 
 The `Microsoft.CodeAnalysis.PublicApiAnalyzers` baseline is enforced during every build. Existing released symbols are
 listed in `src/PdfiumRaster.Orchestrator/PublicAPI.Shipped.txt`; additions awaiting release are listed in
