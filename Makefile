@@ -140,7 +140,7 @@ verify-package: $(PACKAGE)
 		require_entry "tools/$$rid/$$worker"; \
 	done; \
 	nuspec="$$(unzip -p "$(PACKAGE)" PdfiumRaster.Orchestrator.nuspec)"; \
-	if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.5, ?3\.0\.0\)"' <<<"$$nuspec"; then \
+	if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.6, ?3\.0\.0\)"' <<<"$$nuspec"; then \
 		echo 'The PdfiumRaster dependency range is missing or unexpected.' >&2; \
 		exit 1; \
 	fi; \
@@ -158,7 +158,7 @@ verify-package: $(PACKAGE)
 		worker_count="$$(grep -Ec '^tools/.*/PdfiumRaster\.Orchestrator\.Worker(\.exe)?$$' <<<"$$entries")"; \
 		if [[ "$$worker_count" -ne 1 ]]; then echo "$$package must contain exactly one worker, found $$worker_count" >&2; exit 1; fi; \
 		nuspec="$$(unzip -p "$$package" '*.nuspec')"; \
-		if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.5, ?3\.0\.0\)"' <<<"$$nuspec"; then echo "PdfiumRaster dependency range is unexpected in $$package" >&2; exit 1; fi; \
+		if ! grep -Eq 'id="PdfiumRaster" version="\[2\.0\.6, ?3\.0\.0\)"' <<<"$$nuspec"; then echo "PdfiumRaster dependency range is unexpected in $$package" >&2; exit 1; fi; \
 	done; \
 	echo 'Verified all RID-specific packages.'
 
