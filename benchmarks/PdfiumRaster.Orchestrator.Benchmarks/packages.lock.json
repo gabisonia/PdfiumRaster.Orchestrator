@@ -22,33 +22,33 @@
       },
       "PdfiumRaster": {
         "type": "Direct",
-        "requested": "[2.0.6, 3.0.0)",
-        "resolved": "2.0.6",
-        "contentHash": "pYLW/xvNso/INCP163aKaIAqAk5BbvRSSCLfOigKQDyit6R5GJmH0TbZmNI8qj8TdRa3CDJNLl5ohrKE5WjwDw==",
+        "requested": "[2.0.7, 3.0.0)",
+        "resolved": "2.0.7",
+        "contentHash": "li/cVNrVgk2e67J2JyT5kwyDFfzPgPyo4HjS3D/tdLlhtuTNAz6JxFz7RfsBax2NJmXRxv7p6wqz6FQ6uApq1g==",
         "dependencies": {
-          "SkiaSharp": "4.153.1",
-          "SkiaSharp.NativeAssets.Linux.NoDependencies": "4.153.1",
-          "SkiaSharp.NativeAssets.Win32": "4.153.1",
-          "SkiaSharp.NativeAssets.macOS": "4.153.1",
-          "bblanchon.PDFium.Linux": "156.0.8076",
-          "bblanchon.PDFium.Win32": "156.0.8076",
-          "bblanchon.PDFium.macOS": "156.0.8076"
+          "SkiaSharp": "4.154.0",
+          "SkiaSharp.NativeAssets.Linux.NoDependencies": "4.154.0",
+          "SkiaSharp.NativeAssets.Win32": "4.154.0",
+          "SkiaSharp.NativeAssets.macOS": "4.154.0",
+          "bblanchon.PDFium.Linux": "158.0.8125",
+          "bblanchon.PDFium.Win32": "158.0.8125",
+          "bblanchon.PDFium.macOS": "158.0.8125"
         }
       },
       "bblanchon.PDFium.Linux": {
         "type": "Transitive",
-        "resolved": "156.0.8076",
-        "contentHash": "413fLxjGE6Wi/r1U1sBQ7mzIRcCOfo8PRt7y+7NMDGG9sRD77Q6UcqtSLbXSsKonfy6QJJjIrisEY+Wyw3neeA=="
+        "resolved": "158.0.8125",
+        "contentHash": "TigtzDC0RLA0GVZpvOP3qOPs7hFa5K6TSovjnfGrAxNNzD89PcVampFaCebCtUypPMBCOq3XsnJ1snAgpqBO2A=="
       },
       "bblanchon.PDFium.macOS": {
         "type": "Transitive",
-        "resolved": "156.0.8076",
-        "contentHash": "Q01czvrzEWcnHA7K3bfGDhenSlrsO21ziWaSVSq8QLLox0ygwpQM23PAhrEn56Js9vrUYWS8z4pioOWC/b9s1Q=="
+        "resolved": "158.0.8125",
+        "contentHash": "0yitK6OWfnBIZgpV4Jl4YI2kuLhnFPGOub3mMzsEj+zuq6zKgPdA/ztDE54AqbmhSETfBhgvs/l7SKpnqdnHVQ=="
       },
       "bblanchon.PDFium.Win32": {
         "type": "Transitive",
-        "resolved": "156.0.8076",
-        "contentHash": "nWP8z9PAK1ArGUGPoYgSsRL8sFkgvVgOrlv82CjEPGpXdtSg/ctCr/Xe8aDI8k2nk3mXvYWGnOlZsRIA7IxupQ=="
+        "resolved": "158.0.8125",
+        "contentHash": "Nms+gFAZlPKpVb0oLVivumrvdLqC9i+J6uSKbPyqE2CsibcW/LQCQdUeGD36/BUBgJZuwy+ZVSskmwJJTizDjw=="
       },
       "BenchmarkDotNet.Annotations": {
         "type": "Transitive",
@@ -192,27 +192,27 @@
       },
       "SkiaSharp": {
         "type": "Transitive",
-        "resolved": "4.153.1",
-        "contentHash": "TghYLOUaP3q6rTjQw7U9uQaaXh8lEs9rfA1U7/VtmyAptVDtj/SmjtcWzFWmcC/VMWxe3QgbV9uyvqDL7ySFtQ==",
+        "resolved": "4.154.0",
+        "contentHash": "R3BuszJ3tUFmni37nZIRawXL0yx+XHyx7xi1716/0TybuEQFhnBx48Ig3rFpeVFQVytpGpJZZ+NLW9d9UPG7EA==",
         "dependencies": {
-          "SkiaSharp.NativeAssets.Win32": "4.153.1",
-          "SkiaSharp.NativeAssets.macOS": "4.153.1"
+          "SkiaSharp.NativeAssets.Win32": "4.154.0",
+          "SkiaSharp.NativeAssets.macOS": "4.154.0"
         }
       },
       "SkiaSharp.NativeAssets.Linux.NoDependencies": {
         "type": "Transitive",
-        "resolved": "4.153.1",
-        "contentHash": "NrnPjcxjcRau4GMOY0BTpUdMey+MnmLU3jC5AuExEFHPS2NkX1tdkXW0n/c5nQMMHBTAMpHnt7qEOpXs2FNfIQ=="
+        "resolved": "4.154.0",
+        "contentHash": "U6HQ/n+wQ09WyXQB6PK1l46BIrHqTN/dImV84pti3mLxnlOdcSASPQzJwzuZmEgiCbriLtu5fP0t9cdzpFPHsw=="
       },
       "SkiaSharp.NativeAssets.macOS": {
         "type": "Transitive",
-        "resolved": "4.153.1",
-        "contentHash": "YTojWeWIhnpF7uC8vpMxB5wRONKkDB2t3r/nNPA3DL2pgj9fqMXRevA/rIanYazWnco4jo1ufgp3HkXuh1Tz8A=="
+        "resolved": "4.154.0",
+        "contentHash": "GgYL4ML3HT4CW33oXMHdp7BSRU87bPUfWBXdYgNduGlt4GAbAM/3eXcjjUdilS0H1r2R5iBhwvExCfSYGwFKlw=="
       },
       "SkiaSharp.NativeAssets.Win32": {
         "type": "Transitive",
-        "resolved": "4.153.1",
-        "contentHash": "Yqg6rChTVh0BUE8QQxtOA3uUBnihfgID4yex/AvDa0+os2bVcBjmI3Qj9tnOB+R1hd/Jry1Gwl8qw5JI9HZG8Q=="
+        "resolved": "4.154.0",
+        "contentHash": "GXgoY77GCXdPcveNAmy8o3gVit8sp6YtnI88h5camLPfihjulwJUajZXKhgVuZ8RhuwSTgfyt/00Dx8HRUSeAA=="
       },
       "System.CodeDom": {
         "type": "Transitive",
@@ -239,7 +239,7 @@
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.14, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.14, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )",
-          "PdfiumRaster": "[2.0.6, 3.0.0)"
+          "PdfiumRaster": "[2.0.7, 3.0.0)"
         }
       },
       "Microsoft.Extensions.DependencyInjection": {
