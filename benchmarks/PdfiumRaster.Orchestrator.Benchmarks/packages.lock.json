@@ -246,7 +246,8 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[11.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[11.0.0, )",
           "PdfiumRaster": "[2.0.8, 3.0.0)",
-          "System.Diagnostics.DiagnosticSource": "[11.0.0, )"
+          "System.Diagnostics.DiagnosticSource": "[11.0.0, )",
+          "System.Threading.Channels": "[11.0.0, )"
         }
       },
       "Microsoft.Extensions.DependencyInjection": {
@@ -305,6 +306,12 @@
         "requested": "[11.0.0, )",
         "resolved": "11.0.0",
         "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
+      "System.Threading.Channels": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "cnmBnl7mCHTyJkJwRo5TdeACGtgXJSqizUml0QYZdbatRk34D+QSA0bdOqABhGwm1Ar0CfWzxweKWn620rEEWA=="
       }
     }
   }
