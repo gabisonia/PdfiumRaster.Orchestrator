@@ -4,6 +4,8 @@
 .vscode/
 *.DotSettings.user
 artifacts/
+/site/
+__pycache__/
 bin/
 obj/
 TestResults/

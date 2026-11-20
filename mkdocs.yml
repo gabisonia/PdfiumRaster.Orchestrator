@@ -1,0 +1,41 @@
+site_name: PdfiumRaster
+site_description: PDF-to-image rendering and isolated parallel workers for .NET.
+site_url: https://gabisonia.dev/PdfiumRaster.Orchestrator/
+repo_url: https://github.com/gabisonia/PdfiumRaster.Orchestrator
+repo_name: gabisonia/PdfiumRaster.Orchestrator
+edit_uri: blob/master/docs/
+theme:
+  name: material
+  font: false
+  palette:
+    primary: blue grey
+    accent: teal
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+plugins:
+  - search
+markdown_extensions:
+  - tables
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+hooks:
+  - scripts/pages/links.py
+nav:
+  - Overview: index.md
+  - PdfiumRaster:
+    - Getting started: site/pdfiumraster.md
+    - Full API guide: https://github.com/gabisonia/PdfiumRaster/blob/master/docs/API.md
+    - Architecture: https://github.com/gabisonia/PdfiumRaster/blob/master/docs/ARCHITECTURE.md
+    - Performance: https://github.com/gabisonia/PdfiumRaster/blob/master/docs/PERFORMANCE.md
+  - Orchestrator:
+    - Getting started: site/orchestrator.md
+    - API guide: API.md
+    - Architecture: ARCHITECTURE.md
+    - Troubleshooting: TROUBLESHOOTING.md
+  - Development:
+    - Testing: TESTING.md
+    - Releasing: RELEASING.md
