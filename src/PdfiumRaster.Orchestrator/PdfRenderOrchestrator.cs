@@ -1042,6 +1042,8 @@ public sealed class PdfRenderOrchestrator : IDisposable, IAsyncDisposable
 
             await foreach (var page in job.StreamingResults.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
+                // ReadAllAsync can still deliver buffered pages after cancellation.
+                cancellationToken.ThrowIfCancellationRequested();
                 yield return page;
             }
         }
