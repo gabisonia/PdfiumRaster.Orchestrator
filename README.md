@@ -161,6 +161,7 @@ await foreach (var page in orchestrator.RenderPagesStreamAsync(
 ```
 
 Each yielded bitmap is caller-owned. Consume or release it before requesting the next item to keep memory bounded.
+Cancelling between pages makes the next read throw `OperationCanceledException`, even if a page is already buffered.
 Cancellation or ending enumeration early aborts that batch. If it is already active, its worker is replaced because
 unread private-protocol frames cannot safely be reused. The failed or abandoned batch is not retried.
 

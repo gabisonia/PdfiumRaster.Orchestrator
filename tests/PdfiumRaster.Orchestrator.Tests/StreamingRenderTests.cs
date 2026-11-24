@@ -123,6 +123,26 @@ public sealed class StreamingRenderTests : IDisposable
     }
 
     [Fact]
+    public async Task CancellationBeforeReadingBufferedPageStopsEnumeration()
+    {
+        var pdfPath = GetAssetPath("smoke.pdf");
+        await using var orchestrator = await PdfRenderOrchestrator.CreateAsync(new PdfRenderOrchestratorOptions
+        {
+            WorkerCount = 1,
+        });
+        using var cancellation = new CancellationTokenSource();
+        await using var pages = orchestrator.RenderPagesStreamAsync(pdfPath, new[] { 0, 0 })
+            .GetAsyncEnumerator(cancellation.Token);
+
+        Assert.True(await pages.MoveNextAsync());
+        // The sole worker can serve another request only after it has buffered the second page.
+        await orchestrator.RenderPageAsync(pdfPath, 0);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pages.MoveNextAsync().AsTask());
+    }
+
+    [Fact]
     public async Task ValidationAndStreamOwnershipBeginWithEnumeration()
     {
         var bytes = await File.ReadAllBytesAsync(GetAssetPath("smoke.pdf"));
